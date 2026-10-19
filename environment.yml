@@ -1,0 +1,14 @@
+name: ml-math-foundations
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - numpy>=2.0
+  - scipy>=1.11
+  - matplotlib>=3.8
+  - pandas>=2.1
+  - scikit-learn>=1.3
+  - jupyterlab>=4.0
+  - ipykernel>=6.29
+  - nbformat>=5.9
+  - nbclient>=0.9
