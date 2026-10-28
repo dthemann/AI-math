@@ -386,43 +386,63 @@ A team deploys a text-to-image model and must choose the number of reverse steps
 
 1. **You can evaluate $\tilde p(\theta) = p(\text{data} \mid \theta)\,p(\theta)$ but not its integral. Which of the module's samplers can you run, and which cannot you run at all?**
    <details><summary>Answer</summary>
+
    Metropolis–Hastings, Gibbs (if the conditionals are tractable), Langevin/HMC and self-normalised importance sampling only need ratios or gradients of $\tilde p$, so the constant cancels. Rejection sampling also works with an unnormalised target (the acceptance rate becomes $Z/M$). Inverse-CDF sampling needs the CDF, hence the constant, and is unavailable; plain (unnormalised) importance sampling without self-normalisation would estimate $Z\,\mathbb{E}_p f$ rather than $\mathbb{E}_p f$.
+
    </details>
 2. **Why does rejection sampling with proposal $\mathcal{N}(0, 1.1^2 I_d)$ for target $\mathcal{N}(0, I_d)$ accept about 39% of proposals at $d = 10$ but 0.007% at $d = 100$?**
    <details><summary>Answer</summary>
+
    The smallest valid envelope constant is $M = \sup_x p(x)/q(x) = 1.1^d$ (attained at $x = 0$), so the acceptance rate is $1.1^{-d}$: $0.386$ at $d = 10$, $7.3 \times 10^{-5}$ at $d = 100$. Any per-coordinate mismatch is raised to the power of the dimension.
+
    </details>
 3. **An importance sampler returns $\hat\mu = 0.021$ from $n = 10{,}000$ samples with ESS $= 3$. What do you conclude?**
    <details><summary>Answer</summary>
+
    Three samples carry essentially all the weight, so the estimate is as reliable as a three-sample average and its reported standard error (computed as if from 10,000 draws) is meaningless. The proposal is badly mismatched — most likely lighter-tailed than the target. Redesign $q$ (heavier tails, centred on where $|f|p$ is large) before trusting any number.
+
    </details>
 4. **State detailed balance and prove that it implies stationarity. Give an example of a stationary chain that does not satisfy it.**
    <details><summary>Answer</summary>
+
    $\pi_i P_{ij} = \pi_j P_{ji}$ for all $i, j$. Summing over $i$: $(\pi P)_j = \sum_i \pi_i P_{ij} = \sum_i \pi_j P_{ji} = \pi_j$. A deterministic three-state cycle $1 \to 2 \to 3 \to 1$ has stationary $\pi = (1/3, 1/3, 1/3)$ but $\pi_1 P_{12} = 1/3 \ne 0 = \pi_2 P_{21}$; the weather chain of Section 5 is a less extreme example.
+
    </details>
 5. **Two random-walk MH chains target the same posterior. Chain A accepts 92% of proposals, chain B 25%. Chain B has ESS 1,200 from 10,000 draws; chain A has ESS 140. Which step size is larger, and which chain should you use?**
    <details><summary>Answer</summary>
+
    Chain A has the smaller step (high acceptance, tiny moves, high autocorrelation); chain B's step is larger and near the optimal acceptance range. Use B: its 10,000 draws are worth 1,200 independent samples versus 140. Acceptance rate alone says nothing about efficiency.
+
    </details>
 6. **For the 2-D Gaussian with correlation $\rho = 0.99$, how many Gibbs sweeps give the information of one independent sample, and what change would fix it?**
    <details><summary>Answer</summary>
+
    The lag-$k$ autocorrelation is $\rho^{2k}$, so $\tau = (1 + \rho^2)/(1 - \rho^2) = 1.9801/0.0199 \approx 100$ sweeps per effective sample. Rotating to the principal axes makes the coordinates independent, after which one sweep gives an exact sample; alternatively, a gradient-based sampler (HMC) moves along the ridge directly.
+
    </details>
 7. **Write the ELBO and identify the gap to $\log p(x)$. Why does maximising it tend to underestimate posterior variance?**
    <details><summary>Answer</summary>
+
    $\mathcal{L}(q) = \mathbb{E}_q[\log p(x \mid z)] - \text{KL}(q(z)\,\|\,p(z))$ and $\log p(x) - \mathcal{L}(q) = \text{KL}(q(z)\,\|\,p(z \mid x))$. The gap is the reverse KL, which penalises $q$ heavily wherever $q > 0$ but the posterior is small, so the optimal $q$ avoids the posterior's tails and secondary modes — it is mode-seeking and too narrow.
+
    </details>
 8. **An encoder outputs $\mu = 0.5$, $\sigma = 0.8$ for one latent dimension. Compute the KL term. What happens to the KL as $\sigma \to 0$, and why does that matter?**
    <details><summary>Answer</summary>
+
    $\frac12(0.25 + 0.64 - 1 - \ln 0.64) = \frac12(-0.11 + 0.4463) = 0.168$ nats. As $\sigma \to 0$ the term $-\log\sigma^2 \to \infty$: a deterministic code is infinitely expensive, which is how the KL forces the encoder to keep codes spread out and the latent space smooth enough to decode samples from the prior.
+
    </details>
 9. **In a diffusion model with $\bar\alpha_t = 0.25$, a noisy sample is $x_t = 0.3$ and the network predicts $\varepsilon_\theta = -0.4$. What is the implied estimate of $x_0$, and what is the implied score at $x_t$?**
    <details><summary>Answer</summary>
+
    From $x_t = \sqrt{\bar\alpha_t}x_0 + \sqrt{1 - \bar\alpha_t}\varepsilon$: $\hat x_0 = (0.3 - \sqrt{0.75}(-0.4))/0.5 = (0.3 + 0.3464)/0.5 = 1.293$. The score estimate is $-\varepsilon_\theta/\sqrt{1 - \bar\alpha_t} = 0.4/0.866 = 0.462$: the density of noisy data increases to the right of $x_t$, and the reverse step moves that way.
+
    </details>
 10. **Explain why the reverse diffusion step is a Langevin step, and what plays the role of the step size.**
     <details><summary>Answer</summary>
+
     Substituting $\varepsilon_\theta = -\sqrt{1 - \bar\alpha_t}\,\nabla\log q_t(x_t)$ into the reverse mean gives $x_{t-1} = \frac{1}{\sqrt{\alpha_t}}\big(x_t + \beta_t\nabla\log q_t(x_t)\big) + \sigma_t\xi$: a gradient step on $\log q_t$ of size $\beta_t$ plus Gaussian noise, which is exactly Langevin dynamics with $\epsilon/2 = \beta_t$ (up to the rescaling $1/\sqrt{\alpha_t}$). The target $q_t$ changes slowly from noise to data, so the sampler is an annealed Langevin chain.
+
     </details>
 
 ## Further reading

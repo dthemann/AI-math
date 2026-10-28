@@ -319,52 +319,72 @@ The power-law exponents also quantify diminishing returns and connect back to th
 
 1. **A model is evaluated on 2,000 held-out examples and scores 91.0 %. Give a distribution-free 95 % interval for its true accuracy, and a sharper one that uses the observed accuracy.**
    <details><summary>Answer</summary>
+
    Hoeffding: $\varepsilon = \sqrt{\ln(40)/4000} = 0.030$, so $[0.880, 0.940]$. Binomial standard error $\sqrt{0.91 \times 0.09/2000} = 0.0064$, so roughly $0.910 \pm 0.0125$, i.e. $[0.897, 0.923]$ (a Wilson interval is marginally asymmetric). Hoeffding is wider because it allows for the worst-case variance $1/4$; both are valid only if the 2,000 examples were not used to choose the model.
+
    </details>
 
 2. **Why does the training error of the ERM solution underestimate its true error, while the test error does not?**
    <details><summary>Answer</summary>
+
    The ERM hypothesis was chosen *because* it did well on the training sample, so the training losses are not an i.i.d. sample from its loss distribution — the selection induces dependence and optimism. The test sample was not used in the choice, so relative to the test draw the hypothesis is fixed and the test losses are i.i.d. with mean $R(\hat h)$; Hoeffding applies and the estimate is unbiased.
+
    </details>
 
 3. **A class has 1,000,000 hypotheses. How many examples guarantee, with probability 0.99, that every hypothesis's training error is within 0.03 of its true error? How does the answer change for 1,000 hypotheses?**
    <details><summary>Answer</summary>
+
    $n \ge \ln(2 \times 10^6/0.01)/(2 \times 0.03^2) = \ln(2\times10^8)/0.0018 = 19.11/0.0018 \approx 10{,}620$. For 1,000 hypotheses: $\ln(2\times10^5)/0.0018 = 12.21/0.0018 \approx 6{,}780$. A thousandfold larger class costs only about 57 % more data — the logarithm at work.
+
    </details>
 
 4. **What is the VC dimension of the class of "unions of two intervals" on the real line? Justify both directions.**
    <details><summary>Answer</summary>
+
    Four. Four points $x_1 < x_2 < x_3 < x_4$ are shattered: any labelling has at most two runs of positives, each covered by one interval (e.g. $1010$ by $[x_1, x_1] \cup [x_3, x_3]$). Five points cannot realise $10101$, which needs three separate positive runs. In general, unions of $k$ intervals have VC dimension $2k$.
+
    </details>
 
 5. **State Sauer's lemma and explain in one sentence why it is the reason infinite classes can be learnable.**
    <details><summary>Answer</summary>
+
    If $d_{\mathrm{VC}}(\mathcal{H}) = d$ then $\Pi_{\mathcal{H}}(n) \le \sum_{i=0}^d \binom{n}{i} \le (en/d)^d$. The union bound needs the *number of distinct behaviours* on the sample, not the number of hypotheses, and Sauer's lemma says that number grows polynomially in $n$ once $n > d$ — so $\ln\Pi_{\mathcal{H}}(n) \approx d\ln n$ grows slower than $n$ and the Hoeffding exponential still wins.
+
    </details>
 
 6. **Your colleague argues: "The VC bound for my linear model in 500 dimensions with 2,000 examples is about 1.3, so the theory says the model cannot generalise." What is wrong?**
    <details><summary>Answer</summary>
+
    The bound being vacuous ($> 1$) means the *bound* says nothing, not that the model fails: the VC bound is a worst case over all distributions and is loose by large factors. Norm-based (Rademacher or margin) bounds for the same model can be small if $\|w\|$ is controlled and the margin is large, independently of the 500 dimensions, and the test set will settle the question empirically. A vacuous bound is an absence of guarantee, not a guarantee of absence.
+
    </details>
 
 7. **Explain why the test error of minimum-norm least squares peaks when the number of features equals the number of samples, and why it can fall again afterwards.**
    <details><summary>Answer</summary>
+
    At $p \approx n$ the design matrix is square and nearly singular: its smallest singular value is close to zero, so $X^{+} y$ divides the noise by tiny numbers and the variance $\sigma^2 p/(n-p-1)$ (or $\sigma^2 n/(p-n-1)$ from above) blows up. For $p \gg n$ the interpolation constraint $Xw = y$ fixes only $n$ of $p$ directions; the min-norm solution spreads the noise over the many remaining directions with small coefficients, so the variance falls like $n/p$. Whether the second descent beats the classical optimum depends on the feature covariance having a few strong signal directions and many weak ones to absorb noise (benign overfitting).
+
    </details>
 
 8. **Prove in three lines that gradient descent on least squares started from zero converges to the minimum-norm solution when $p > n$ and the rows of $X$ are independent.**
    <details><summary>Answer</summary>
+
    (1) $w_{t+1} = w_t - \eta X^\top(Xw_t - y)$, so each increment is $X^\top(\cdot)$, a combination of rows of $X$; starting at $0$, every $w_t \in \operatorname{row}(X)$. (2) For $\eta < 2/\sigma_{\max}^2$ the iterates converge to a point with $Xw = y$ (the loss is convex and the infimum $0$ is attained). (3) Interpolators form the affine set $X^{+}y + \operatorname{null}(X)$, and $\operatorname{null}(X) \perp \operatorname{row}(X)$, so the unique interpolator inside $\operatorname{row}(X)$ is $X^{+}y$, the minimum-norm one.
+
    </details>
 
 9. **A pneumonia model's sensitivity and specificity are unchanged between hospitals A and B, but its positive predictive value halves. Which kind of shift is this, and what fixes it?**
    <details><summary>Answer</summary>
+
    Label shift: $P(x \mid y)$ is the same (the disease looks the same), but the prevalence $P(y)$ differs. PPV $= \text{sens} \cdot \pi / (\text{sens}\cdot\pi + (1 - \text{spec})(1 - \pi))$ depends on $\pi$. The fix is to re-weight the classifier's posterior by the ratio of class priors (or re-estimate the priors on unlabelled B data) and re-choose the decision threshold; no retraining of $P(x \mid y)$ is needed.
+
    </details>
 
 10. **A data scientist standardises all features, selects the 50 most correlated with the label, then runs 10-fold cross-validation on a 5,000-feature, 100-sample dataset and reports 92 % accuracy. The features are pure noise. What happened and what is the right procedure?**
     <details><summary>Answer</summary>
+
     Feature selection used the labels of *all* 100 samples, including each fold's test samples, so the 50 features were chosen partly for their chance correlation with the test labels — leakage. With 5,000 noise features, some will correlate strongly with 100 labels by chance, and the CV score is meaningless. Put selection (and scaling) inside a `Pipeline` so that it is re-fitted on each training fold only; the honest estimate will be near 50 %.
+
     </details>
 
 ## Further reading

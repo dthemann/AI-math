@@ -296,47 +296,65 @@ Three practical details map directly onto this module. Grid cells near the poles
 
 1. **A $2\times2$ matrix has trace 6 and determinant 8. What are its eigenvalues, and is it diagonalisable?**
    <details><summary>Answer</summary>
+
    $\lambda^2 - 6\lambda + 8 = (\lambda-2)(\lambda-4)$, so $\lambda = 2, 4$. Distinct eigenvalues always give linearly independent eigenvectors, hence the matrix is diagonalisable (though the eigenvectors need not be orthogonal unless the matrix is symmetric).
+
    </details>
 
 2. **Why does power iteration on a column-stochastic matrix converge, and what controls the speed?**
    <details><summary>Answer</summary>
+
    A column-stochastic matrix has eigenvalue 1 (since $\mathbf{1}^\top T = \mathbf{1}^\top$) and all other eigenvalues have modulus at most 1. If the chain is irreducible and aperiodic the eigenvalue 1 is simple and strictly dominant, so $T^k x_0 \to \pi$. The error decays like $\lvert\lambda_2\rvert^k$; for the Google matrix $\lvert\lambda_2\rvert \le d$, which is why damping guarantees fast convergence.
+
    </details>
 
 3. **Is $\begin{pmatrix} 1 & 2 \\ 2 & 1\end{pmatrix}$ positive semidefinite?**
    <details><summary>Answer</summary>
+
    No. Its eigenvalues solve $\lambda^2 - 2\lambda - 3 = 0$, giving $3$ and $-1$. Equivalently $x = (1, -1)$ gives $x^\top A x = 1 - 4 + 1 = -2 < 0$. A positive diagonal is not enough; the off-diagonal entries must be dominated.
+
    </details>
 
 4. **How are the singular values of $A$ related to the eigenvalues of $A^\top A$, and why are singular values never negative or complex?**
    <details><summary>Answer</summary>
+
    $\sigma_i = \sqrt{\lambda_i(A^\top A)}$. $A^\top A$ is symmetric and positive semidefinite ($x^\top A^\top Ax = \lVert Ax\rVert^2 \ge 0$), so its eigenvalues are real and non-negative, and their square roots are real and non-negative too.
+
    </details>
 
 5. **A $1000\times1000$ matrix has singular values $100, 50, 10, 1, 1, 1, \dots$ (the rest are 1). What relative Frobenius error does the rank-3 approximation make?**
    <details><summary>Answer</summary>
+
    Dropped energy: $997 \times 1^2 = 997$. Total energy: $10{,}000 + 2{,}500 + 100 + 997 = 13{,}597$. Relative Frobenius error $= \sqrt{997/13{,}597} \approx 0.27$. Even though each dropped value is tiny, there are many of them — the long tail matters.
+
    </details>
 
 6. **Your colleague runs PCA on a dataset with columns "age in years" and "annual income in euros" and reports that the first component explains 99.99 % of the variance. What happened?**
    <details><summary>Answer</summary>
+
    Income varies by tens of thousands, age by tens; the covariance matrix is dominated by the income variance, so the first component is essentially the income axis. The 99.99 % says nothing about structure in the data. Standardise each column (zero mean, unit variance) and repeat; on the correlation matrix the split will be far more balanced.
+
    </details>
 
 7. **Explain in one sentence each why $A^+b$ (a) minimises $\lVert Ax - b\rVert$ and (b) has minimum norm among the minimisers.**
    <details><summary>Answer</summary>
+
    (a) $AA^+b = U_rU_r^\top b$ is the orthogonal projection of $b$ onto $\operatorname{col}(A)$, which is the closest point in the column space. (b) $A^+b$ lies in $\operatorname{row}(A) = \operatorname{span}\{v_1,\dots,v_r\}$, orthogonal to $\operatorname{null}(A)$; any other minimiser is $A^+b + z$ with $z \in \operatorname{null}(A)$, and by Pythagoras $\lVert A^+b + z\rVert^2 = \lVert A^+b\rVert^2 + \lVert z\rVert^2$.
+
    </details>
 
 8. **Ridge regression replaces $1/\sigma_i$ by $\sigma_i/(\sigma_i^2+\lambda)$. Which directions does it change most, and what happens as $\lambda \to 0$ and $\lambda \to \infty$?**
    <details><summary>Answer</summary>
+
    For $\sigma_i^2 \gg \lambda$ the factor is $\approx 1/\sigma_i$ (unchanged); for $\sigma_i^2 \ll \lambda$ it is $\approx \sigma_i/\lambda \to 0$, so the small-singular-value directions — the ones that amplify noise most — are shrunk hardest. As $\lambda \to 0$ ridge becomes the pseudo-inverse solution; as $\lambda \to \infty$ all coefficients go to zero.
+
    </details>
 
 9. **Why does gradient descent slow down on an ill-conditioned problem, and how does feature scaling help?**
    <details><summary>Answer</summary>
+
    The step size must be below $2/\lambda_{\max}$ to avoid diverging along the stiff direction, but progress along the flat direction is then proportional to $\lambda_{\min}/\lambda_{\max} = 1/\kappa$ per step. Standardising features equalises the scales of the columns of $X$, bringing the eigenvalues of $X^\top X$ closer together and shrinking $\kappa$, so one step size works well for every direction.
+
    </details>
 
 ## Further reading

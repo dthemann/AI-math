@@ -354,25 +354,65 @@ A team writes its own `tanh` activation with a backward rule for a tiny recurren
 ## Self-assessment
 
 1. **Why does reverse mode cost about the same for a model with 10 parameters and one with 10 million, while finite differences do not?**
-   <details><summary>Answer</summary>Reverse mode performs one backward sweep per *output*. A loss has one output, so one sweep — costing a constant multiple of the forward pass — yields all $n$ partial derivatives, whatever $n$ is. Finite differences need one or two extra forward passes per *input*, so their cost grows linearly in $n$.</details>
+   <details><summary>Answer</summary>
+
+   Reverse mode performs one backward sweep per *output*. A loss has one output, so one sweep — costing a constant multiple of the forward pass — yields all $n$ partial derivatives, whatever $n$ is. Finite differences need one or two extra forward passes per *input*, so their cost grows linearly in $n$.
+
+   </details>
 2. **A node is used by three later operations. What does its adjoint look like, and what bug does this expose in a hand-written engine?**
-   <details><summary>Answer</summary>Its adjoint is the sum of three contributions, $\bar v = \sum_{i \in \mathrm{ch}(v)} \bar v_i \,\partial \phi_i / \partial v$. An engine that assigns with <code>=</code> instead of accumulating with <code>+=</code> keeps only the last child's contribution and produces a wrong gradient exactly when variables are reused.</details>
+   <details><summary>Answer</summary>
+
+   Its adjoint is the sum of three contributions, $\bar v = \sum_{i \in \mathrm{ch}(v)} \bar v_i \,\partial \phi_i / \partial v$. An engine that assigns with <code>=</code> instead of accumulating with <code>+=</code> keeps only the last child's contribution and produces a wrong gradient exactly when variables are reused.
+
+   </details>
 3. **You want the full $3 \times 1000$ Jacobian of $f: \mathbb{R}^{1000} \to \mathbb{R}^3$. Which mode, and roughly how many sweeps?**
-   <details><summary>Answer</summary>Reverse mode: three sweeps (one per output), each costing a small multiple of $f$. Forward mode would need 1,000 sweeps. For $f: \mathbb{R}^3 \to \mathbb{R}^{1000}$ the answer flips: three forward sweeps.</details>
+   <details><summary>Answer</summary>
+
+   Reverse mode: three sweeps (one per output), each costing a small multiple of $f$. Forward mode would need 1,000 sweeps. For $f: \mathbb{R}^3 \to \mathbb{R}^{1000}$ the answer flips: three forward sweeps.
+
+   </details>
 4. **In the 2–2–1 worked example of Section 4, why are all gradients of the first hidden unit zero, and what would change with a leaky ReLU?**
-   <details><summary>Answer</summary>Its pre-activation $z = -1$ is negative, so $\mathrm{relu}'(z) = 0$ and $\delta_1$ has a zero entry, which multiplies into $\partial \mathcal{L}/\partial W_1$ and $\partial \mathcal{L}/\partial b_1$. With leaky ReLU, $f'(z) = \alpha$ (say $0.01$) instead of $0$, so the unit receives a small but non-zero gradient and can recover.</details>
+   <details><summary>Answer</summary>
+
+   Its pre-activation $z = -1$ is negative, so $\mathrm{relu}'(z) = 0$ and $\delta_1$ has a zero entry, which multiplies into $\partial \mathcal{L}/\partial W_1$ and $\partial \mathcal{L}/\partial b_1$. With leaky ReLU, $f'(z) = \alpha$ (say $0.01$) instead of $0$, so the unit receives a small but non-zero gradient and can recover.
+
+   </details>
 5. **Why does training memory grow with batch size even though the number of parameters does not?**
-   <details><summary>Answer</summary>The backward rules need the forward activations ($a_{l-1}$ for $\bar W_l = \delta_l a_{l-1}^\top$, $z_l$ or $f'(z_l)$ for the mask) of every example in the batch, so stored activations scale with batch × depth × width. Weights are shared across the batch. Checkpointing trades recomputation for storing fewer activations.</details>
+   <details><summary>Answer</summary>
+
+   The backward rules need the forward activations ($a_{l-1}$ for $\bar W_l = \delta_l a_{l-1}^\top$, $z_l$ or $f'(z_l)$ for the mask) of every example in the batch, so stored activations scale with batch × depth × width. Weights are shared across the batch. Checkpointing trades recomputation for storing fewer activations.
+
+   </details>
 6. **Derive the backward rule for $Y = AB$ with respect to $B$ from the scalar definition.**
-   <details><summary>Answer</summary>$Y_{ij} = \sum_k A_{ik} B_{kj}$, so $\partial Y_{ij}/\partial B_{kj} = A_{ik}$ and $B_{kj}$ affects only column $j$ of $Y$. Hence $\bar B_{kj} = \sum_i G_{ij} A_{ik} = (A^\top G)_{kj}$, i.e. $\bar B = A^\top G$, of shape $k \times n$ as required.</details>
+   <details><summary>Answer</summary>
+
+   $Y_{ij} = \sum_k A_{ik} B_{kj}$, so $\partial Y_{ij}/\partial B_{kj} = A_{ik}$ and $B_{kj}$ affects only column $j$ of $Y$. Hence $\bar B_{kj} = \sum_i G_{ij} A_{ik} = (A^\top G)_{kj}$, i.e. $\bar B = A^\top G$, of shape $k \times n$ as required.
+
+   </details>
 7. **Your gradient check reports relative error $0.5$ on one ReLU weight and $10^{-10}$ on all others. Bug or not?**
-   <details><summary>Answer</summary>Almost certainly not a bug: that pattern is the signature of a pre-activation within $h$ of zero, where the central difference straddles the kink and returns about half the one-sided slope. Re-check at a different input or parameter setting; a real bug in the ReLU rule would affect every ReLU weight.</details>
+   <details><summary>Answer</summary>
+
+   Almost certainly not a bug: that pattern is the signature of a pre-activation within $h$ of zero, where the central difference straddles the kink and returns about half the one-sided slope. Re-check at a different input or parameter setting; a real bug in the ReLU rule would affect every ReLU weight.
+
+   </details>
 8. **Why can `log(softmax(z))` give NaN while `log_softmax(z)` does not, even in float64?**
-   <details><summary>Answer</summary>If some $z_i > 709$, <code>exp</code> overflows to infinity and the softmax becomes inf/inf = NaN; if a class is confidently wrong, its probability underflows to 0 and <code>log(0)</code> is $-\infty$. <code>log_softmax</code> computes $z - m - \ln \sum e^{z_i - m}$ with $m = \max z$: every exponent is at most 0 and no logarithm of zero is taken.</details>
+   <details><summary>Answer</summary>
+
+   If some $z_i > 709$, <code>exp</code> overflows to infinity and the softmax becomes inf/inf = NaN; if a class is confidently wrong, its probability underflows to 0 and <code>log(0)</code> is $-\infty$. <code>log_softmax</code> computes $z - m - \ln \sum e^{z_i - m}$ with $m = \max z$: every exponent is at most 0 and no logarithm of zero is taken.
+
+   </details>
 9. **What does the straight-through estimator change, and why is it not "cheating"?**
-   <details><summary>Answer</summary>It keeps the hard, non-differentiable operation (rounding, argmax) in the forward pass but replaces its zero-almost-everywhere derivative with the identity (or a smooth surrogate) in the backward pass. The resulting update is a biased estimate of a gradient that does not exist, but it moves the upstream parameters in a direction that reduces the loss of the relaxed problem, and empirically it trains quantised networks and discrete latent models well.</details>
+   <details><summary>Answer</summary>
+
+   It keeps the hard, non-differentiable operation (rounding, argmax) in the forward pass but replaces its zero-almost-everywhere derivative with the identity (or a smooth surrogate) in the backward pass. The resulting update is a biased estimate of a gradient that does not exist, but it moves the upstream parameters in a direction that reduces the loss of the relaxed problem, and empirically it trains quantised networks and discrete latent models well.
+
+   </details>
 10. **How can you compute a Hessian-vector product for a model with $10^8$ parameters without $10^{16}$ memory?**
-    <details><summary>Answer</summary>Form the scalar $s = \nabla_\theta L \cdot v$ with a backward pass that keeps its own graph (<code>create_graph=True</code>), then differentiate $s$ with respect to $\theta$: $\nabla_\theta s = H v$. Two backward passes, $O(n)$ memory, and no Hessian is ever materialised.</details>
+    <details><summary>Answer</summary>
+
+    Form the scalar $s = \nabla_\theta L \cdot v$ with a backward pass that keeps its own graph (<code>create_graph=True</code>), then differentiate $s$ with respect to $\theta$: $\nabla_\theta s = H v$. Two backward passes, $O(n)$ memory, and no Hessian is ever materialised.
+
+    </details>
 
 ## Further reading
 

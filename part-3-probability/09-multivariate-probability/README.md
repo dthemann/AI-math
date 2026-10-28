@@ -307,43 +307,63 @@ With $\rho = 0$ the variance falls like $\sigma^2/n$, the familiar independent-a
 
 1. **A joint table has $p(x, y) = 0.12$, $p_X(x) = 0.3$ and $p_Y(y) = 0.4$. Can $X$ and $Y$ be independent? What is $p(y \mid x)$?**
    <details><summary>Answer</summary>
+
    Independence would require $p(x, y) = 0.3 \times 0.4 = 0.12$, which matches — so this one cell is consistent with independence, but independence requires the factorisation in *every* cell, so you cannot conclude it from one. The conditional is $p(y \mid x) = 0.12/0.3 = 0.4 = p_Y(y)$, again consistent with (but not proof of) independence.
+
    </details>
 2. **$X \sim \mathcal{N}(0, 1)$ and $Y = X^2$. Compute $\operatorname{Cov}(X, Y)$ and explain whether $X$ and $Y$ are independent.**
    <details><summary>Answer</summary>
+
    $\operatorname{Cov}(X, Y) = \mathbb{E}[X^3] - \mathbb{E}[X]\mathbb{E}[X^2] = 0 - 0 = 0$ by the symmetry of the normal. They are maximally dependent — $Y$ is a function of $X$ — which shows that zero correlation only rules out *linear* association. Mutual information would be infinite here (a deterministic continuous relationship), while Spearman's correlation is also zero because the relationship is not monotone.
+
    </details>
 3. **Why must a covariance matrix be positive semidefinite? Give the one-line proof and a $2 \times 2$ symmetric matrix that is *not* a valid covariance matrix.**
    <details><summary>Answer</summary>
+
    For any $a$, $a^\top\Sigma a = \operatorname{Var}(a^\top X) \ge 0$, and a symmetric matrix whose quadratic form is non-negative has non-negative eigenvalues. $\begin{pmatrix} 1 & 2 \\ 2 & 1 \end{pmatrix}$ is symmetric but has eigenvalues $3$ and $-1$ — it would imply a correlation of 2, and $\operatorname{Var}(X_1 - X_2) = 1 + 1 - 4 < 0$.
+
    </details>
 4. **For $\Sigma = \begin{pmatrix} 4 & 2 \\ 2 & 4 \end{pmatrix}$, find the directions and lengths of the axes of the one-standard-deviation ellipse.**
    <details><summary>Answer</summary>
+
    Eigenvalues solve $(4 - \lambda)^2 = 4$, so $\lambda = 6$ and $\lambda = 2$ with eigenvectors $(1, 1)/\sqrt2$ and $(1, -1)/\sqrt2$. The ellipse's major semi-axis is $\sqrt6 = 2.45$ along the diagonal $x_1 = x_2$ and the minor semi-axis is $\sqrt2 = 1.41$ along $x_1 = -x_2$. Correlation is $2/4 = 0.5$.
+
    </details>
 5. **In a bivariate Gaussian with $\sigma_1 = \sigma_2 = 1$ and $\rho = 0.8$, you observe $X_2 = 2$. What is the distribution of $X_1$? How much has the variance shrunk, and does the answer change if you had observed $X_2 = 0.1$?**
    <details><summary>Answer</summary>
+
    $X_1 \mid X_2 = 2 \sim \mathcal{N}(0.8 \times 2,\ 1 - 0.64) = \mathcal{N}(1.6, 0.36)$: the variance shrinks by a factor $1 - \rho^2 = 0.36$, i.e. by 64%. For $X_2 = 0.1$ the mean would be $0.08$ but the variance would still be $0.36$ — in a Gaussian the conditional variance never depends on the observed value.
+
    </details>
 6. **Derive the Kalman gain from the Gaussian conditioning formula, and explain what $K \to 1$ and $K \to 0$ mean.**
    <details><summary>Answer</summary>
+
    With predicted state $\mathcal{N}(\mu^-, P^-)$ and measurement $z = x + r$, $r \sim \mathcal{N}(0, r)$, the pair $(x, z)$ has covariance $\begin{pmatrix} P^- & P^- \\ P^- & P^- + r \end{pmatrix}$. Conditioning: $\mu = \mu^- + \Sigma_{12}\Sigma_{22}^{-1}(z - \mu^-) = \mu^- + \frac{P^-}{P^- + r}(z - \mu^-)$, so $K = P^-/(P^- + r)$. $K \to 1$ when $r \ll P^-$ (trust the precise sensor, ignore the prediction); $K \to 0$ when $r \gg P^-$ (ignore the noisy sensor, keep the prediction).
+
    </details>
 7. **Explain the law of total variance in terms of a regression model's training error and noise floor.**
    <details><summary>Answer</summary>
+
    $\operatorname{Var}(Y) = \mathbb{E}[\operatorname{Var}(Y \mid X)] + \operatorname{Var}(\mathbb{E}[Y \mid X])$. The second term is the variance that a perfect regressor $f^*(x) = \mathbb{E}[Y \mid X = x]$ explains; the first is the noise around $f^*$, the irreducible error that even the perfect model incurs. A model's MSE equals this noise floor plus $\mathbb{E}[(f^*(X) - \hat f(X))^2]$, which is the part that bias and estimation variance contribute. $R^2$ is the explained fraction $\operatorname{Var}(\mathbb{E}[Y \mid X])/\operatorname{Var}(Y)$.
+
    </details>
 8. **A drug shows a higher recovery rate than placebo in the whole trial, but a lower rate among both men and women. Which conclusion is right, and what single feature of the trial design would have prevented the paradox?**
    <details><summary>Answer</summary>
+
    Sex is a confounder: the drug must have been given disproportionately to the sex with the better baseline recovery, and the aggregate reflects that imbalance rather than the drug. The stratified comparison (drug worse in both sexes) is the trustworthy one, since sex cannot be an effect of the treatment. Randomised assignment makes $P(\text{sex} \mid \text{treatment}) = P(\text{sex})$ and removes the paradox by design for *every* confounder, measured or not.
+
    </details>
 9. **A Gaussian-process posterior has variance almost equal to the prior variance at some test point. What does that tell you, and what would you do about it in Bayesian optimisation?**
    <details><summary>Answer</summary>
+
    The test point is more than a few length-scales from every training input, so $k_*$ is nearly zero and the data say nothing about $f$ there: the posterior has reverted to the prior. In Bayesian optimisation this is where exploration happens — an acquisition function such as upper confidence bound $\mu(x) + \kappa\sigma(x)$ rewards exactly such points, trading off against exploiting regions with a high posterior mean.
+
    </details>
 10. **Two assets have standard-normal returns tied together by a Gaussian copula with $\rho = 0.5$. What happens to the probability that both fall below their 1st percentile if you replace the Gaussian copula by a $t_3$-copula with the same $\rho$, and why does this matter?**
     <details><summary>Answer</summary>
+
     It rises — from about $0.13\%$ to about $0.33\%$, a factor of $2.5$, and the factor keeps growing further out in the tail (about 6 at the 0.1% level): the Gaussian copula has zero tail dependence (joint extremes become relatively rarer the further out you go), whereas the $t$-copula has positive tail dependence, so extreme losses cluster. The marginals and the correlation coefficient are nearly unchanged, so no univariate check and no correlation matrix would reveal the difference. This is the mechanism behind the mispricing of mortgage-backed securities before 2008.
+
     </details>
 
 ## Further reading

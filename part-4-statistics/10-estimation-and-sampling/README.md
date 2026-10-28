@@ -287,43 +287,63 @@ A team fine-tunes a language model and evaluates on a 1,000-question benchmark: 
 
 1. **A 95% confidence interval for a conversion rate is $[2.1\%, 3.4\%]$. A colleague says "so there's a 95% chance the true rate is between 2.1% and 3.4%". What is right and wrong about this?**
    <details><summary>Answer</summary>
+
    Wrong as a probability statement about the fixed, unknown rate: once computed, the interval either contains it or not. Right in spirit if read as "this interval came from a procedure that captures the true rate in 95% of repeated samples". To make the colleague's sentence literally true you need a prior over the rate and a Bayesian credible interval (Module 11); with a flat prior the two intervals are numerically close here, which is why the misreading usually does little harm — but not for small $n$ or strong prior knowledge.
+
    </details>
 2. **A poll of 1,000 people gives a margin of error of ± 3 points. How many people would be needed for ± 1 point? Does the answer depend on the size of the country?**
    <details><summary>Answer</summary>
+
    The margin scales like $1/\sqrt{n}$, so a third of the margin needs nine times the sample: about 9,600. It does not depend on the population size as long as the sample is a small fraction of it — the finite population correction $(N-n)/(N-1)$ is essentially 1 for a country. What matters is that the sample is *random*; a biased sample of 2.4 million is worse than a random one of 1,000.
+
    </details>
 3. **Why does the sample variance divide by $n - 1$? Is $s$ then an unbiased estimator of $\sigma$?**
    <details><summary>Answer</summary>
+
    Because $\sum(X_i - \bar{X})^2 = \sum(X_i - \mu)^2 - n(\bar{X} - \mu)^2$ has expectation $n\sigma^2 - \sigma^2 = (n-1)\sigma^2$: deviations from the sample mean are systematically smaller than deviations from the true mean, since $\bar{X}$ minimises them. Dividing by $n - 1$ makes $s^2$ unbiased for $\sigma^2$. $s$ is *not* unbiased for $\sigma$: the square root is concave, so Jensen's inequality gives $\mathbb{E}[s] < \sqrt{\mathbb{E}[s^2]} = \sigma$.
+
    </details>
 4. **You observe 0 failures in 40 trials. What do the Wald and Wilson 95% intervals say, and which should you believe?**
    <details><summary>Answer</summary>
+
    Wald: $\hat{p} = 0$, $\widehat{\operatorname{SE}} = 0$, interval $[0, 0]$ — a claim of certainty from 40 observations, obviously wrong. Wilson: lower limit 0, upper limit $z^2/(n + z^2) = 3.84/43.84 \approx 0.088$; the rule of three gives $3/40 = 0.075$. Believe Wilson: forty clean trials are consistent with a failure rate of up to about 8–9%.
+
    </details>
 5. **Why does the bootstrap fail for the sample maximum?**
    <details><summary>Answer</summary>
+
    A bootstrap resample contains the original maximum with probability $1 - (1 - 1/n)^n \approx 0.63$, so about 63% of bootstrap maxima equal the sample maximum exactly and the rest are smaller. The bootstrap distribution is a spike at one value with a left tail, while the true sampling distribution of the maximum is spread *around* the population maximum, mostly below it. The plug-in principle breaks because the maximum depends on the extreme tail of $F$, where $\hat{F}_n$ is a terrible approximation.
+
    </details>
 6. **A dataset of 400 measurements has standard deviation 20. What is the standard error of the mean? If you collect 1,600 measurements, what happens to the standard deviation, and what to the standard error?**
    <details><summary>Answer</summary>
+
    $\operatorname{SE} = 20/\sqrt{400} = 1$. The standard deviation estimates a population property and stays near 20 (it does not shrink); the standard error becomes $20/\sqrt{1600} = 0.5$. Four times the data, half the uncertainty about the mean.
+
    </details>
 7. **Two classifiers score 71.2% and 70.1% on the same 1,000 test examples. What single additional piece of information do you need to judge whether the difference is real, and why?**
    <details><summary>Answer</summary>
+
    The disagreement counts $n_{10}$ and $n_{01}$ (how often each is right where the other is wrong). The paired SE $\sqrt{((n_{10} + n_{01})/n - \hat{d}^2)/n}$ depends only on the disagreements; if the two models disagree on 181 examples it is 1.34 points and the gap is inconclusive, but if they disagree on only 15 examples (13 vs 2) the same 1.1-point gap has SE 0.39 and is clearly real. The unpaired SE (about 2.0 points) ignores the correlation between models and is always too pessimistic.
+
    </details>
 8. **An online survey about customer satisfaction gets 50,000 responses, a 4% response rate. Why might its estimate be worse than a random telephone sample of 800 with a 60% response rate?**
    <details><summary>Answer</summary>
+
    The sampling error of 50,000 responses is tiny (SE around 0.2 points), but if dissatisfied customers are two or three times more likely to respond, the estimate is biased by many points, and this bias is unchanged by the sample size. The telephone sample has SE about 1.8 points but, with a high response rate from a random frame, far less selection bias. Total error is bias plus noise; a huge biased sample has mostly bias.
+
    </details>
 9. **Give an example of an estimator that is biased yet has lower MSE than the standard unbiased one, and explain where the gain comes from.**
    <details><summary>Answer</summary>
+
    The variance estimator with divisor $n + 1$ (or $n$) instead of $n - 1$: for normal data with $n = 10$ its MSE is 0.182 (0.190) versus 0.222 for the unbiased $s^2$. Shrinking toward zero introduces a small bias but reduces the variance by more than the squared bias. The same mechanism makes James–Stein beat the sample mean vector for $p \ge 3$ and makes ridge regression beat OLS in prediction error.
+
    </details>
 10. **You train a model with 10 random seeds and report the best test accuracy. Roughly how optimistic is that number, and what should you report instead?**
     <details><summary>Answer</summary>
+
     If the seed-to-seed standard deviation is $\sigma$, the expected maximum of 10 noisy scores is about $1.54\,\sigma$ above the typical performance; with $\sigma = 0.7$ points that is over a point of pure selection. Report the mean (or median) over seeds with its standard error and the number of seeds, and if the best seed must be chosen, select it on a validation set and report its score on a *separate* test set.
+
     </details>
 
 ## Further reading

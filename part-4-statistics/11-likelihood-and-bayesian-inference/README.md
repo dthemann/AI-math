@@ -309,43 +309,63 @@ An online store sorts products by average rating. Product P has three reviews, a
 
 1. **You observe 3 successes in 12 trials. Write the likelihood, find the MLE, and explain why $L(0.25)$ is not "the probability that $p = 0.25$".**
    <details><summary>Answer</summary>
+
    $L(p) = \binom{12}{3}p^3(1-p)^9$, maximised at $\hat p = 3/12 = 0.25$ (set $\frac{3}{p} = \frac{9}{1-p}$). $L(0.25) \approx 0.258$ is the probability of seeing exactly 3 successes *if* $p = 0.25$; it is a statement about the data under a hypothesis. $L$ does not integrate to 1 over $p$ (here $\int_0^1 L = 1/13$), and turning it into a probability over $p$ requires a prior and normalisation.
+
    </details>
 2. **Why is the MLE of the Normal variance biased, and in which direction? Does the bias matter at $n = 10^6$?**
    <details><summary>Answer</summary>
+
    $\hat\sigma^2$ measures spread around the *sample* mean, which sits closer to the data than the true mean does, so $\mathbb{E}[\hat\sigma^2] = \frac{n-1}{n}\sigma^2$ — too small. At $n = 10^6$ the bias is one part in a million, far below the estimate's standard deviation ($\approx \sigma^2\sqrt{2/n} \approx 0.0014\sigma^2$); it is irrelevant. At $n = 5$ it is 20% and matters.
+
    </details>
 3. **State the invariance property and give an example where it is useful and an example where it misleads.**
    <details><summary>Answer</summary>
+
    If $\hat\theta$ is the MLE of $\theta$ then $g(\hat\theta)$ is the MLE of $g(\theta)$. Useful: the MLE of $P(X > t)$ under an Exponential model is $e^{-t/\bar x}$ without any new optimisation. Misleading: $\sqrt{\hat\sigma^2}$ is the MLE of $\sigma$, but it is biased even though you might expect "the MLE of the standard deviation" to be a good estimate; invariance preserves maximality, not unbiasedness or any other finite-sample property.
+
    </details>
 4. **The Fisher information for a Bernoulli trial is $1/(p(1-p))$. For which $p$ is a fixed $n$ least informative, and what does that imply for sample sizes in A/B tests?**
    <details><summary>Answer</summary>
+
    Information is smallest at $p = 0.5$, where $\operatorname{SE}(\hat p) = 0.5/\sqrt n$ is largest. For a rate near 5%, $\operatorname{SE} = \sqrt{0.0475/n} \approx 0.22/\sqrt n$, smaller in absolute terms — but a *relative* precision of 10% needs $\operatorname{SE} = 0.005$, i.e. $n \approx 1{,}900$, versus $n \approx 100$ for a 10% relative precision at $p = 0.5$. Low conversion rates need large samples because the quantity of interest is small.
+
    </details>
 5. **Derive in three lines why minimising MSE is maximum likelihood, and name the assumption that makes MAE the right loss instead.**
    <details><summary>Answer</summary>
+
    Under $y_i = f(x_i; w) + \varepsilon_i$ with $\varepsilon_i \sim \mathcal{N}(0, \sigma^2)$, $-\ell(w) = \frac{n}{2}\log(2\pi\sigma^2) + \frac{1}{2\sigma^2}\sum_i(y_i - f(x_i; w))^2$. The first term and the factor $1/2\sigma^2$ are constant in $w$, so $\arg\min_w(-\ell) = \arg\min_w\sum_i(y_i - f(x_i;w))^2$. If the noise is Laplace, $p(\varepsilon) \propto e^{-|\varepsilon|/b}$, the same steps give $\sum_i|y_i - f(x_i; w)|$: MAE is MLE under heavy-tailed, double-exponential noise.
+
    </details>
 6. **A colleague reports "the 95% confidence interval for the conversion rate is [4.1%, 5.9%], so there is a 95% chance the rate is in that range." What is wrong, and what calculation would make the sentence correct?**
    <details><summary>Answer</summary>
+
    A confidence interval's 95% refers to the long-run coverage of the procedure, not to this interval; the rate is fixed and either inside or outside. The sentence is correct for a *credible* interval: with a Beta prior, compute the posterior Beta$(a + k, b + n - k)$ and take its 2.5% and 97.5% quantiles. With a flat prior and $n$ in the thousands the two intervals nearly coincide numerically, but the interpretation changes.
+
    </details>
 7. **A prior Beta$(20, 80)$ is updated with 30 successes in 50 trials. Give the posterior, its mean as a weighted average, and the weight on the data.**
    <details><summary>Answer</summary>
+
    Posterior Beta$(50, 100)$, mean $50/150 = 1/3$. Weighted form: $\frac{50}{150}\cdot 0.6 + \frac{100}{150}\cdot 0.2 = 0.2 + 0.133 = 0.333$. The data weight is $n/(a + b + n) = 50/150 = 1/3$: the prior "remembers" 100 pseudo-trials and still outweighs 50 real ones.
+
    </details>
 8. **Show that a Gaussian prior with variance $\tau^2$ on the weights and Gaussian noise with variance $\sigma^2$ gives ridge regression, and say what happens to the effective regularisation when the dataset grows tenfold.**
    <details><summary>Answer</summary>
+
    $-\log p(w \mid \mathcal{D}) = \frac{1}{2\sigma^2}\|y - Xw\|^2 + \frac{1}{2\tau^2}\|w\|^2 + \text{const}$; multiplying by $2\sigma^2$ gives $\|y - Xw\|^2 + \lambda\|w\|^2$ with $\lambda = \sigma^2/\tau^2$. The data term is a sum over $n$ examples and grows tenfold; $\lambda\|w\|^2$ does not. Relative to the data the prior becomes ten times weaker, so the MAP moves toward the MLE — the correct behaviour. If your code uses a *mean* loss, keeping the same prior means dividing $\lambda$ by 10.
+
    </details>
 9. **After zero defects in 50 inspected parts, a manager says the defect rate is zero. Give the Bayesian predictive probability of a defect in the next part (uniform prior) and the 95% upper credible bound for the rate.**
    <details><summary>Answer</summary>
+
    Posterior Beta$(1, 51)$. Rule of succession: $P(\text{next defective}) = 1/52 \approx 0.019$. The 95% upper bound solves $1 - (1 - p)^{51} = 0.95$, i.e. $p = 1 - 0.05^{1/51} \approx 0.057$; the rule of three gives $3/50 = 0.06$. Zero observed defects is consistent with a rate of 5%.
+
    </details>
 10. **In a Bayesian A/B test, $P(p_B > p_A \mid \mathcal{D}) = 0.97$ while the frequentist $p$-value is 0.06. Are these contradictory? Which should drive the ship/no-ship decision, and what extra quantity would you compute?**
     <details><summary>Answer</summary>
+
     Not contradictory — they condition on different things. The $p$-value is $P(\text{data at least this extreme} \mid p_A = p_B)$; the posterior probability is $P(p_B > p_A \mid \text{data})$. For a decision, the posterior is the relevant object, but it should be paired with the *expected loss* of each action, $\mathbb{E}[\max(p_A - p_B, 0)]$ for shipping B: a 97% chance of a tiny gain against a 3% chance of a tiny loss is a very different situation from a 97% chance of a tiny gain against a 3% chance of a disaster.
+
     </details>
 
 ## Further reading

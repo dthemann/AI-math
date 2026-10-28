@@ -491,25 +491,65 @@ The repaired pipeline shuffles every epoch, re-estimates the running statistics 
 ## Self-assessment
 
 1. **Why can no single affine unit compute XOR, and what is the smallest change that fixes it?**
-   <details><summary>Answer</summary>Adding the two positive-point inequalities gives $w_1 + w_2 + 2b > 0$, adding the two negative-point inequalities gives $w_1 + w_2 + 2b \le 0$ — a contradiction, so no hyperplane separates the classes. One hidden layer with two ReLU units (computing $x_1 + x_2$ and $x_1 + x_2 - 1$) maps the four points to new coordinates in which a line does separate them.</details>
+   <details><summary>Answer</summary>
+
+   Adding the two positive-point inequalities gives $w_1 + w_2 + 2b > 0$, adding the two negative-point inequalities gives $w_1 + w_2 + 2b \le 0$ — a contradiction, so no hyperplane separates the classes. One hidden layer with two ReLU units (computing $x_1 + x_2$ and $x_1 + x_2 - 1$) maps the four points to new coordinates in which a line does separate them.
+
+   </details>
 2. **A colleague stacks 20 `Linear` layers with no activation functions and reports that the model is "very deep". What can it represent?**
-   <details><summary>Answer</summary>Only affine maps: $X W_1 W_2 \cdots W_{20} + (\text{bias terms})$ is a single matrix and vector. It has the expressive power of linear regression, with worse conditioning and more parameters. Depth counts only with a nonlinearity between layers.</details>
+   <details><summary>Answer</summary>
+
+   Only affine maps: $X W_1 W_2 \cdots W_{20} + (\text{bias terms})$ is a single matrix and vector. It has the expressive power of linear regression, with worse conditioning and more parameters. Depth counts only with a nonlinearity between layers.
+
+   </details>
 3. **What are the shapes of $W_1$, $b_1$, $Z_1$ and $\partial \mathcal{L} / \partial W_1$ for a batch of 32 examples with 20 features and 50 hidden units, and which product gives $\partial \mathcal{L} / \partial W_1$?**
-   <details><summary>Answer</summary>$W_1: 20 \times 50$, $b_1: 50$, $Z_1: 32 \times 50$, $\partial \mathcal{L} / \partial W_1: 20 \times 50 = X^\top G_1$ with $X: 32 \times 20$ and $G_1: 32 \times 50$. The bias gradient sums $G_1$ over its 32 rows.</details>
+   <details><summary>Answer</summary>
+
+   $W_1: 20 \times 50$, $b_1: 50$, $Z_1: 32 \times 50$, $\partial \mathcal{L} / \partial W_1: 20 \times 50 = X^\top G_1$ with $X: 32 \times 20$ and $G_1: 32 \times 50$. The bias gradient sums $G_1$ over its 32 rows.
+
+   </details>
 4. **Derive $\partial \mathcal{L} / \partial z = p - y$ for softmax cross-entropy in three lines.**
-   <details><summary>Answer</summary>$\ln p_j = z_j - \ln \sum_c e^{z_c}$, so $\partial \ln p_j / \partial z_m = \mathbb{1}[j = m] - p_m$. The loss is $-\sum_j y_j \ln p_j$ with $\sum_j y_j = 1$, so $\partial \mathcal{L} / \partial z_m = -\sum_j y_j(\mathbb{1}[j=m] - p_m) = -y_m + p_m$.</details>
+   <details><summary>Answer</summary>
+
+   $\ln p_j = z_j - \ln \sum_c e^{z_c}$, so $\partial \ln p_j / \partial z_m = \mathbb{1}[j = m] - p_m$. The loss is $-\sum_j y_j \ln p_j$ with $\sum_j y_j = 1$, so $\partial \mathcal{L} / \partial z_m = -\sum_j y_j(\mathbb{1}[j=m] - p_m) = -y_m + p_m$.
+
+   </details>
 5. **Why does a sigmoid output with squared-error loss learn slowly on confidently wrong examples, and by how much at $z = -5$, $y = 1$?**
-   <details><summary>Answer</summary>Its gradient $2(\sigma - y)\sigma(1 - \sigma)$ contains the sigmoid's slope, which is $0.0066$ at $z = -5$; the gradient is $-0.013$ versus $-0.993$ for cross-entropy, 75 times smaller. The $\ln$ in cross-entropy cancels the $\exp$ in the sigmoid and removes the slope factor.</details>
+   <details><summary>Answer</summary>
+
+   Its gradient $2(\sigma - y)\sigma(1 - \sigma)$ contains the sigmoid's slope, which is $0.0066$ at $z = -5$; the gradient is $-0.013$ versus $-0.993$ for cross-entropy, 75 times smaller. The $\ln$ in cross-entropy cancels the $\exp$ in the sigmoid and removes the slope factor.
+
+   </details>
 6. **Where does the factor 2 in He initialisation come from, and what would it be for a leaky ReLU with slope $\alpha$?**
-   <details><summary>Answer</summary>A ReLU zeroes the negative half of a symmetric input, so $E[\mathrm{ReLU}(z)^2] = \tfrac12 E[z^2]$; preserving the second moment through $n_{\text{in}}$ inputs needs $n_{\text{in}} \sigma_w^2 / 2 = 1$. For leaky ReLU the negative half contributes $\alpha^2 \cdot \tfrac12 E[z^2]$, so the factor is $2 / (1 + \alpha^2)$.</details>
+   <details><summary>Answer</summary>
+
+   A ReLU zeroes the negative half of a symmetric input, so $E[\mathrm{ReLU}(z)^2] = \tfrac12 E[z^2]$; preserving the second moment through $n_{\text{in}}$ inputs needs $n_{\text{in}} \sigma_w^2 / 2 = 1$. For leaky ReLU the negative half contributes $\alpha^2 \cdot \tfrac12 E[z^2]$, so the factor is $2 / (1 + \alpha^2)$.
+
+   </details>
 7. **Ten sigmoid layers with weights of spectral norm 1: give an upper bound on the gradient reaching the first layer, and name three changes that each remove the problem.**
-   <details><summary>Answer</summary>Each layer multiplies the gradient by at most $\max \sigma' = 1/4$, so the bound is $4^{-10} \approx 10^{-6}$ relative to the output gradient. Remedies: ReLU-family activations (mask of 0/1, no $1/4$); residual connections (Jacobian $I + J$, identity path); batch or layer normalisation (keeps pre-activations $O(1)$ so Jacobians stay $O(1)$). Careful initialisation helps ReLU networks but cannot rescue sigmoid chains, since saturation makes the product smaller for larger weights too.</details>
+   <details><summary>Answer</summary>
+
+   Each layer multiplies the gradient by at most $\max \sigma' = 1/4$, so the bound is $4^{-10} \approx 10^{-6}$ relative to the output gradient. Remedies: ReLU-family activations (mask of 0/1, no $1/4$); residual connections (Jacobian $I + J$, identity path); batch or layer normalisation (keeps pre-activations $O(1)$ so Jacobians stay $O(1)$). Careful initialisation helps ReLU networks but cannot rescue sigmoid chains, since saturation makes the product smaller for larger weights too.
+
+   </details>
 8. **A batch-norm network gives perfect validation accuracy but outputs the same score for every patient in production. What happened?**
-   <details><summary>Answer</summary>It is running in training mode and scoring one example at a time, so the batch statistics are $\mu = z$ and $\sigma^2 = 0$: every normalised pre-activation is 0 and the output is a constant determined by the $\beta$ parameters. Inference must use the running mean and variance (`model.eval()`).</details>
+   <details><summary>Answer</summary>
+
+   It is running in training mode and scoring one example at a time, so the batch statistics are $\mu = z$ and $\sigma^2 = 0$: every normalised pre-activation is 0 and the output is a constant determined by the $\beta$ parameters. Inference must use the running mean and variance (`model.eval()`).
+
+   </details>
 9. **Why is the kept activation divided by $q$ in inverted dropout, and what would go wrong without it?**
-   <details><summary>Answer</summary>$E[M \odot A / q] = qA/q = A$, so the next layer's expected input is unchanged between training (mask on) and inference (mask off). Without the division the training-time input would be $q$ times smaller than at test time, and the network would see inputs of the wrong scale when deployed — or need a compensating rescaling at test time, as the original dropout did.</details>
+   <details><summary>Answer</summary>
+
+   $E[M \odot A / q] = qA/q = A$, so the next layer's expected input is unchanged between training (mask on) and inference (mask off). Without the division the training-time input would be $q$ times smaller than at test time, and the network would see inputs of the wrong scale when deployed — or need a compensating rescaling at test time, as the original dropout did.
+
+   </details>
 10. **The training loss of your digit classifier reaches 0.002 and the test loss creeps up slightly after epoch 20 while test accuracy stays at 98 percent. Is the model overfitting, and what would you do?**
-    <details><summary>Answer</summary>Mildly: the model is becoming over-confident (logit gaps grow without bound) rather than changing its decisions, which is why accuracy is flat while the log-loss rises. Early stopping at the test-loss minimum, label smoothing or weight decay all address it; comparing architectures by half-percent differences on 360 test examples does not, since the standard error of the accuracy is about 0.7 percentage points.</details>
+    <details><summary>Answer</summary>
+
+    Mildly: the model is becoming over-confident (logit gaps grow without bound) rather than changing its decisions, which is why accuracy is flat while the log-loss rises. Early stopping at the test-loss minimum, label smoothing or weight decay all address it; comparing architectures by half-percent differences on 360 test examples does not, since the standard error of the accuracy is about 0.7 percentage points.
+
+    </details>
 
 ## Further reading
 

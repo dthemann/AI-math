@@ -373,52 +373,72 @@ The linear algebra says what can and cannot be learned. Each adapted matrix move
 
 1. **Why is "lookup row $t$ of $E$" the same as a matrix product, and what does that imply for the gradient of $E$?**
    <details><summary>Answer</summary>
+
    $e_t^\top E$ with $e_t$ one-hot selects row $t$. By the chain rule, $\partial L/\partial E = e_t\,(\partial L/\partial x)^\top$, which is zero everywhere except row $t$: only the embeddings of tokens that actually appear in the batch receive a gradient. Rare tokens are therefore updated rarely, which is one reason their embeddings are poorly trained.
+
    </details>
 
 2. **All scores in one row of $QK^\top$ are equal. What is the attention output for that query?**
    <details><summary>Answer</summary>
+
    The softmax of a constant row is uniform, $P_{ij} = 1/n$, so $o_i = \tfrac1n\sum_j v_j$ — the plain mean of the value vectors. This is also what a freshly initialised, heavily scaled-down attention head computes, and why early in training attention outputs look like averages.
+
    </details>
 
 3. **Head width $d_k = 256$, no scaling. What is the standard deviation of the raw scores at initialisation, and roughly what probability does a score one standard deviation above its two competitors receive?**
    <details><summary>Answer</summary>
+
    $\sqrt{256} = 16$. A score $16$ above two others gives $\operatorname{softmax}(16, 0, 0) \approx (1 - 2e^{-16}, e^{-16}, e^{-16})$, i.e. $p_1 \approx 1 - 2\times10^{-7}$. The diagonal Jacobian entry $p_1(1 - p_1) \approx 2\times10^{-7}$: effectively no gradient reaches the queries and keys of that row.
+
    </details>
 
 4. **Show that the rows of the softmax Jacobian sum to zero, and explain what this means for the gradient with respect to the logits.**
    <details><summary>Answer</summary>
+
    $J\mathbf 1 = \operatorname{diag}(p)\mathbf 1 - pp^\top\mathbf 1 = p - p\,(p^\top\mathbf 1) = p - p = 0$ since $\sum_i p_i = 1$. Because $J$ is symmetric, also $\mathbf 1^\top J = 0$, so $\mathbf 1^\top(\partial L/\partial z) = \mathbf 1^\top J^\top g = 0$: the logit gradient always sums to zero. Adding a constant to all logits does not change the softmax, so the loss has no gradient in that direction.
+
    </details>
 
 5. **A decoder has $d = 2048$, $L = 24$, $d_{\text{ff}} = 8192$, $V = 32{,}000$, untied unembedding. Estimate its parameter count, and the context length at which attention FLOPs equal weight FLOPs.**
    <details><summary>Answer</summary>
+
    Blocks: $12 \times 24 \times 2048^2 = 1.21\times10^9$. Embedding and unembedding: $2 \times 32{,}000 \times 2048 = 1.31\times10^8$. Total about $1.34$ billion. Crossover at $n = 6d = 12{,}288$ tokens.
+
    </details>
 
 6. **Why can a causally masked transformer be trained on all $n$ next-token predictions of a sequence in a single forward pass, while an RNN must process tokens sequentially?**
    <details><summary>Answer</summary>
+
    With the causal mask, the output at position $i$ depends only on tokens $1..i$, so the prediction at every position is a valid next-token prediction given the true prefix (teacher forcing), and all $n$ of them can be computed as one matrix product $PV$ with a lower-triangular $P$. An RNN's state at position $i$ is a function of the state at $i-1$, so the computation is inherently serial; a transformer's positions are coupled only through attention, which is one parallel operation.
+
    </details>
 
 7. **Prove in two lines that attention without positional information is permutation-equivariant, and state why RoPE still allows the model to use order.**
    <details><summary>Answer</summary>
+
    With $\Pi$ a permutation matrix, $\operatorname{softmax}(\Pi QK^\top\Pi^\top)\Pi V = \Pi\operatorname{softmax}(QK^\top)\Pi^\top\Pi V = \Pi\operatorname{softmax}(QK^\top)V$, using that row-wise softmax commutes with permuting rows and columns and $\Pi^\top\Pi = I$. RoPE breaks the symmetry by rotating $q_m$ and $k_n$ by position-dependent angles so that $q_m^\top k_n = q^\top R((n-m)\theta)k$ depends on the relative offset $n - m$; permuting the tokens changes the offsets and hence the scores.
+
    </details>
 
 8. **Why do transformers use layer normalisation rather than batch normalisation?**
    <details><summary>Answer</summary>
+
    LayerNorm normalises over the features of one token, so it needs no batch statistics: it behaves identically for a batch of one, for sequences of different lengths with padding, and during autoregressive generation one token at a time. BatchNorm's statistics depend on which other sequences and positions are in the batch, differ between training and inference, and would leak information across positions and examples.
+
    </details>
 
 9. **A model has $L = 48$, $h_{kv} = 8$, $d_{\text{head}} = 128$, fp16 cache. How many bytes of KV cache does one token need, and how much for a batch of $16$ sequences of $32{,}768$ tokens?**
    <details><summary>Answer</summary>
+
    Per token: $2 \times 48 \times 8 \times 128 \times 2 = 196{,}608$ bytes $= 192$ KiB. Batch: $16 \times 32{,}768 \times 192$ KiB $= 96$ GiB — more than an $80$ GB GPU holds even before the weights. Either shorten the context, shrink the batch, quantise the cache to $8$ bits, or shard across GPUs.
+
    </details>
 
 10. **A rank-$16$ LoRA on a $4096\times4096$ matrix is trained, and a colleague proposes rank $32$ "because inference is cheap anyway". What does rank change, and what does it not?**
     <details><summary>Answer</summary>
+
     Rank $32$ doubles the adapter's parameters ($32 \times 8192 = 262{,}144$ vs $131{,}072$), its optimiser state and its file size, and enlarges the subspace the update can live in (Eckart–Young: the achievable error drops from $\sqrt{\sum_{i>16}\sigma_i^2}$ to $\sqrt{\sum_{i>32}\sigma_i^2}$ of the ideal update). It changes nothing about inference once merged: $W_0 + \tfrac{\alpha}{r}BA$ is a dense $4096\times4096$ matrix at either rank. Whether rank $32$ helps depends on how fast the singular values of the true update decay.
+
     </details>
 
 ## Further reading

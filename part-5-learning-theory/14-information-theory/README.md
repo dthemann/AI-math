@@ -323,43 +323,63 @@ A large image classifier (the teacher) produces logits $(5, 2, 1, 0)$ for an ima
 
 1. **A weather service says "rain" with probability $0.2$ on a certain day and it rains. How many bits of information did the outcome carry? How many if it had not rained?**
    <details><summary>Answer</summary>
+
    Rain: $-\log_2 0.2 = 2.32$ bits. No rain: $-\log_2 0.8 = 0.32$ bits. The average over the forecaster's own distribution, $0.2 \times 2.32 + 0.8 \times 0.32 = 0.72$ bits, is $H_b(0.2)$ — the expected surprise, i.e. the entropy.
+
    </details>
 2. **Why must the information of independent events be additive, and why does that force a logarithm?**
    <details><summary>Answer</summary>
+
    Learning two unrelated facts should tell you the sum of what each tells you alone. For independent events the joint probability is the product $p(x)p(y)$, so we need a function $f$ with $f(pq) = f(p) + f(q)$ for all $p, q \in (0, 1]$; the only continuous solutions are $f(p) = -c\log p$, and $c > 0$ makes rarer events more informative. The base of the logarithm is the choice of unit.
+
    </details>
 3. **$X$ has three values with probabilities $(0.5, 0.25, 0.25)$. Compute $H(X)$, the Huffman code lengths and the expected code length. Why are they equal?**
    <details><summary>Answer</summary>
+
    $H = 0.5 \times 1 + 2 \times 0.25 \times 2 = 1.5$ bits. Huffman merges the two $0.25$ symbols, then merges the result with the $0.5$ symbol: lengths $(1, 2, 2)$, $L = 0.5 + 0.5 + 0.5 = 1.5$ bits. They coincide because every probability is a power of two, so $\ell_i = -\log_2 p_i$ exactly and the Kraft sum $\tfrac12 + \tfrac14 + \tfrac14 = 1$ wastes nothing.
+
    </details>
 4. **Your classifier outputs $q = (0.7, 0.2, 0.1)$ and the label is class 2. What is the cross-entropy loss in nats and in bits? If instead the target were label-smoothed with $\varepsilon = 0.3$ over 3 classes, what is the smallest achievable loss?**
    <details><summary>Answer</summary>
+
    The loss is $-\ln 0.2 = 1.609$ nats $= 2.32$ bits. The smoothed target is $(0.1, 0.8, 0.1)$; cross-entropy $H(t, q) = H(t) + D_{\mathrm{KL}}(t \,\|\, q) \ge H(t) = -0.8\ln 0.8 - 2 \times 0.1\ln 0.1 = 0.639$ nats, attained when $q = t$ — the model is no longer rewarded for pushing the true-class probability beyond $0.8$.
+
    </details>
 5. **You fit a single Gaussian to data drawn from an equal mixture of $\mathcal{N}(-3, 1)$ and $\mathcal{N}(3, 1)$ by maximum likelihood. Describe the fit. How would it differ if you minimised the reverse KL instead?**
    <details><summary>Answer</summary>
+
    Maximum likelihood minimises the forward KL $D_{\mathrm{KL}}(p_{\text{data}} \,\|\, q)$, which punishes $q$ for assigning low density where data exist, so the fit is a broad Gaussian centred at $0$ with variance $\approx 10$ (between-mode variance $9$ plus within-mode variance $1$) — mode-covering, with most of its mass where there are no data. Reverse KL $D_{\mathrm{KL}}(q \,\|\, p_{\text{data}})$ punishes $q$ for placing mass where the data density is low, so it settles on one hump, $\mathcal{N}(\pm 3, \approx 1)$ — mode-seeking, ignoring half the data.
+
    </details>
 6. **Two variables have correlation exactly zero. Can their mutual information be large? Can two variables with $I(X; Y) = 0$ be correlated?**
    <details><summary>Answer</summary>
+
    Yes to the first: $Y = X^2$ for symmetric $X$ has zero correlation but $I(X; Y) = H(Y) > 0$ (knowing $X$ fixes $Y$). No to the second: $I = 0$ iff $X$ and $Y$ are independent, and independent variables have zero covariance. Mutual information detects all dependence; correlation only linear dependence.
+
    </details>
 7. **State the ELBO and explain why maximising it over $q$ is "approximate posterior inference".**
    <details><summary>Answer</summary>
+
    $\mathrm{ELBO}(q) = \mathbb{E}_q[\log p(x \mid z)] - D_{\mathrm{KL}}(q(z) \,\|\, p(z)) \le \log p(x)$. The gap is $D_{\mathrm{KL}}(q(z) \,\|\, p(z \mid x))$, which does not depend on how we parameterise $q$ but is zero iff $q$ equals the true posterior. Since $\log p(x)$ is fixed, raising the ELBO lowers the KL to the posterior: the maximiser is the best approximation to $p(z \mid x)$ within the family of $q$'s we allow, under the reverse-KL notion of "best".
+
    </details>
 8. **Why is the softmax the "right" way to turn scores into probabilities, from the maximum-entropy point of view?**
    <details><summary>Answer</summary>
+
    Among all distributions over the classes with a prescribed expected score $\mathbb{E}_p[s] = c$, the one with maximum entropy is $p(k) \propto \exp(s_k/T)$, where $T$ is set by $c$. The softmax therefore commits to nothing beyond the scores: any other distribution with the same expected score encodes additional assumptions. Changing $T$ moves along this family — larger $T$, higher entropy, lower expected score.
+
    </details>
 9. **A model reports perplexity $8$ per token with a 32,000-token vocabulary; another reports perplexity $12$ with a 100,000-token vocabulary. Which is better?**
    <details><summary>Answer</summary>
+
    You cannot tell. Perplexity per token depends on how the tokeniser chops text: a larger vocabulary produces fewer tokens per character, each harder to predict, so per-token perplexity rises even for an identical model. Convert both to bits per character (or per byte): loss in bits per token times tokens per character. The lower bits-per-character model is better.
+
    </details>
 10. **A binary symmetric channel flips bits with probability $0.2$. You want to send 1,000 reliable bits. Roughly how many channel uses do you need at best, and could a 3-fold repetition code do it?**
     <details><summary>Answer</summary>
+
     Capacity is $1 - H_b(0.2) = 1 - 0.722 = 0.278$ bits per use, so at least $1000/0.278 \approx 3{,}600$ uses are needed for arbitrarily reliable transmission (with long, well-designed codes). The 3-fold repetition code uses 3,000 channel uses — fewer than the bound, so it cannot be reliable: its bit error rate is $3(0.2)^2(0.8) + 0.2^3 = 0.104$, about one error in ten bits.
+
     </details>
 
 ## Further reading

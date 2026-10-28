@@ -1,0 +1,13 @@
+{
+  // "Markdown PDF" extension (yzane.markdown-pdf): dark export of the guides.
+  // Right-click a README.md -> "Markdown PDF: Export (pdf)". The same look is produced
+  // for all guides at once by `python tools/md2pdf.py`.
+  "markdown-pdf.styles": ["tools/pdf/dark.css"],
+  "markdown-pdf.stylesRelativePathFile": false,
+  "markdown-pdf.includeDefaultStyles": true,
+  "markdown-pdf.highlightStyle": "github-dark-dimmed.css",
+  "markdown-pdf.printBackground": true,
+  "markdown-pdf.displayHeaderFooter": true,
+  "markdown-pdf.headerTemplate": "<div style=\"font-size: 9px; margin-left: 1cm; color: #999;\"><span class='title'></span></div>",
+  "markdown-pdf.footerTemplate": "<div style=\"font-size: 9px; margin: 0 auto; color: #999;\"><span class='pageNumber'></span> / <span class='totalPages'></span></div>"
+}

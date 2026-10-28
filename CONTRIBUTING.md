@@ -6,13 +6,14 @@ Corrections, clearer explanations, better real-world examples and new exercises 
 
 ### Module layout
 
-Every module folder contains exactly four files:
+Every module folder contains these four files, plus an optional `figures/` folder of SVG images used by the guide:
 
 ```
 README.md         concept guide (the long-form explanation)
 lesson.ipynb      narrated, runnable walk-through
 exercises.ipynb   8–12 self-checking exercises + one mini-project (outputs stripped)
 solutions.ipynb   reference solutions with explanations (executed, outputs kept)
+figures/          (optional) SVG figures embedded in README.md
 ```
 
 ### Concept guides (`README.md`)
@@ -20,6 +21,41 @@ solutions.ipynb   reference solutions with explanations (executed, outputs kept)
 Required sections, in order: title and hook · *Why this matters for ML and AI* · *Learning objectives* · *Prerequisites* · numbered concept sections · *Common pitfalls and misconceptions* · *Real-world case studies* · *Where this shows up in ML, DL and AI* · *Cheat sheet* · *Self-assessment* · *Further reading* · *What's in the notebooks*.
 
 Each numbered concept section gives, in order: intuition, a precise definition with LaTeX (`$...$`, `$$...$$` — GitHub renders both), a worked example with actual numbers, a real-life example, and a short "In ML/AI this is …" paragraph. Cross-link other modules with relative paths.
+
+### Figures in concept guides
+
+Add a figure where a picture removes a misunderstanding the text alone leaves open, not to every section. Figures are generated, never hand-drawn: a module's figures come from `tools/builders/figures_XX.py`, built on the helpers in `tools/figbuild.py`, and are written as SVG into the module's `figures/` folder.
+
+```bash
+python tools/builders/figures_01.py                      # (re)write all figures of Module 01
+python tools/builders/figures_01.py projection --preview /tmp/fig   # one figure, plus a PNG preview
+```
+
+* Draw the guide's own worked-example numbers, so that picture and text agree exactly.
+* Every panel has a title and axis labels; keep the white background so the figure also reads on GitHub's dark theme.
+* Embed with a relative Markdown image link whose alt text describes the figure in words (no `$` maths in alt text), followed by a bold caption; `tools/check_repo.py` verifies that the link resolves:
+
+  ```markdown
+  ![Vectors a and b, the projection p of a onto b, and the residual r at a right angle to b.](figures/projection.svg)
+
+  **Figure 5.** (a) The projection ... (b) ...
+  ```
+* Output is reproducible: regenerating unchanged figures produces byte-identical files.
+
+### Self-assessment answers
+
+Answers are hidden behind `<details>`. Leave a blank line after `<details><summary>Answer</summary>` and another before `</details>`; otherwise CommonMark treats the whole block as raw HTML and the maths inside the answer is not rendered — on GitHub or anywhere else.
+
+### Rendering the guides as PDF
+
+The guides also render as dark PDFs — black pages, white text, figures inverted to dark, the self-assessment answers printed:
+
+```bash
+python tools/md2pdf.py                                   # every guide and doc -> build/pdf/
+python tools/md2pdf.py part-1-linear-algebra/01-vectors-and-geometry/README.md docs/glossary.md
+```
+
+This needs `pandoc` and a Chromium/Chrome binary (found automatically from the VS Code "Markdown PDF" extension's download, or given with `--chrome`); maths is rendered with KaTeX fetched from a CDN, and `--mathml` works offline. In VS Code, the "Markdown PDF" extension's right-click export produces the same look: `.vscode/settings.json` points it at the shared stylesheet `tools/pdf/dark.css`. Generated PDFs are ignored by git.
 
 ### Notebooks
 

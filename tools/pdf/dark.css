@@ -1,0 +1,171 @@
+/*
+ * Dark theme for the Markdown guides when they are exported to PDF.
+ *
+ * Used by the VS Code "Markdown PDF" extension (configured in .vscode/settings.json)
+ * and by tools/md2pdf.py, so both routes produce the same look: black pages, white
+ * text, dark code blocks, figures inverted to dark, and the self-assessment answers
+ * printed instead of hidden.
+ */
+
+:root {
+  color-scheme: dark;
+}
+
+/* Chromium does not paint the root background into the page margins; the page box itself has to be black. */
+@page {
+  background: #000;
+}
+
+html,
+body {
+  background: #000 !important;
+  color: #fff !important;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body {
+  font-family: "Segoe UI", Ubuntu, "DejaVu Sans", "Droid Sans", sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #fff;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+h1 {
+  border-bottom: 1px solid #555;
+}
+
+hr {
+  border: 0;
+  border-bottom: 2px solid #444;
+}
+
+a {
+  color: #8ab4f8;
+}
+
+blockquote {
+  margin: 0.8em 0;
+  padding: 0.4em 1em;
+  background: #111 !important;
+  border-left: 4px solid #8ab4f8 !important;
+  color: #e6e6e6;
+}
+
+/* Code: blocks become a dark card, inline code gets a soft highlight. */
+pre,
+pre.hljs,
+pre.sourceCode,
+pre > code,
+code.hljs {
+  background: #121212 !important;
+  color: #e8e8e8 !important;
+  border-color: #333 !important;
+}
+
+pre {
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 0.8em 1em;
+  font-size: 0.8em !important;        /* long command lines fit the page width */
+  line-height: 1.4 !important;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+pre > code {
+  font-size: inherit !important;
+  line-height: inherit !important;
+}
+
+:not(pre) > code {
+  background: #1c1c1c;
+  color: #e6c07b !important;
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+}
+
+/* Tables */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8em 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+th,
+td {
+  border: 1px solid #444 !important;
+  padding: 5px 10px;
+  vertical-align: top;
+}
+
+th {
+  background: #161616 !important;
+}
+
+tbody tr:nth-child(even) {
+  background: #0a0a0a;
+}
+
+/* Figures. The SVGs are drawn on white; inverting them and rotating the hue back
+ * gives a dark version with the original colours. The caption paragraph that
+ * follows an image stays on the same page as the image. */
+img {
+  filter: invert(1) hue-rotate(180deg);
+  max-width: 100%;
+}
+
+p:has(> img:only-child),
+figure {
+  text-align: center;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+p:has(> img:only-child) + p {
+  break-before: avoid;
+  page-break-before: avoid;
+}
+
+figcaption {
+  color: #bbb;
+  font-size: 0.9em;
+}
+
+/* Maths (KaTeX or MathML) inherits the text colour. */
+.katex,
+math {
+  color: #fff;
+}
+
+/* Self-assessment answers live in <details>, which is closed by default and would be
+ * dropped from a PDF. Print them as a boxed "Answer:" instead. */
+details {
+  margin: 0.4em 0 1em;
+  padding: 0.4em 0.9em;
+  background: #0b0b0b !important;
+  border: 1px solid #333;
+  border-radius: 4px;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+details > summary {
+  color: #8ab4f8;
+  font-weight: 600;
+  list-style: none;
+}
+
+details > summary::after {
+  content: ":";
+}
+
+details::details-content {
+  content-visibility: visible !important;
+  display: block;
+}

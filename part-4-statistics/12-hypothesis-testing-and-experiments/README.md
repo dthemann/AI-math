@@ -314,43 +314,63 @@ A team compares a gradient-boosted model B with the incumbent logistic regressio
 
 1. **An A/B test reports $p = 0.04$. A colleague says "so there is a 96% chance the new variant is better". What is wrong, and what extra information would you need to make a statement of that kind?**
    <details><summary>Answer</summary>
+
    The p-value is the probability of data at least this extreme *if the variants were identical*, not the probability that they are identical given the data. To get $P(\text{better} \mid \text{data})$ you need a prior probability that variants are better and the test's power: with 10% of ideas being real improvements and power 0.8, Bayes' theorem gives $P(\text{real} \mid \text{significant}) = 0.08/(0.08 + 0.045) = 0.64$, so a significant result is wrong about a third of the time in such an environment.
+
    </details>
 2. **A trial with 60 patients per arm finds no significant difference between a drug and placebo. The sponsor concludes the drug does not work. Evaluate.**
    <details><summary>Answer</summary>
+
    For a plausible effect (20% vs 30% response) the power of this trial is about 0.24, so it would miss a real effect three times out of four; a non-significant result is therefore almost uninformative. The right summary is the confidence interval for the difference, which will be wide and include both "no effect" and "large benefit". To conclude "does not work" one would need an equivalence or non-inferiority test with a pre-specified margin and adequate power.
+
    </details>
 3. **Why does Welch's t-test have non-integer degrees of freedom, and when does it differ materially from Student's pooled test?**
    <details><summary>Answer</summary>
+
    The Welch–Satterthwaite formula matches the first two moments of the estimated variance $s_1^2/n_1 + s_2^2/n_2$ to a scaled chi-square distribution, and the matching degrees of freedom are generally fractional. The two tests nearly coincide when variances are similar or $n_1 = n_2$; they differ materially when the variances are unequal *and* the sample sizes are unequal, where the pooled test's true type I error can be far above or below $\alpha$ depending on which group is larger.
+
    </details>
 4. **Six machines are measured before and after a modification. The paired t-test gives $p = 0.008$ and the unpaired Welch test gives $p = 0.40$ on the same twelve numbers. Explain the discrepancy and say which is correct.**
    <details><summary>Answer</summary>
+
    The machines differ from each other far more than the modification changes any one of them. The paired test analyses within-machine differences and removes the between-machine variance (the covariance term $2\rho\sigma_x\sigma_y$ with $\rho \approx 0.98$); the unpaired test treats the twelve numbers as two independent samples and lets the machine-to-machine spread swamp the effect. The paired analysis is correct because the design is paired; the unpaired one discards information and is not wrong so much as needlessly weak — though it would be *wrong* to pair observations that are not naturally linked.
+
    </details>
 5. **For a $2 \times 2$ table, show in one line that the chi-square statistic equals the square of the two-proportion z-statistic, and state what this implies about their p-values.**
    <details><summary>Answer</summary>
+
    With expected counts $E$ computed from the pooled rate, every $(O - E)$ in the table has the same magnitude $|n_1 n_2(\hat\theta_1 - \hat\theta_2)|/N$, and summing $(O - E)^2/E$ over the four cells gives $(\hat\theta_1 - \hat\theta_2)^2 / [\bar\theta(1 - \bar\theta)(1/n_1 + 1/n_2)] = z^2$. Since $Z^2 \sim \chi^2_1$, the two-sided z p-value and the chi-square p-value are identical; the chi-square test is simply the two-sided version with no notion of direction.
+
    </details>
 6. **With three observations per group, what is the smallest two-sided p-value a permutation test can produce, and what does this say about tiny experiments?**
    <details><summary>Answer</summary>
+
    There are $\binom{6}{3} = 20$ equally likely splits, and extreme results come in mirror-image pairs, so the smallest two-sided p-value is $2/20 = 0.10$. No outcome can reach $0.05$; a "significant" result from such an experiment can only come from a parametric test leaning on assumptions the data cannot check. Exact tests make the information limit of small samples visible.
+
    </details>
 7. **Ten p-values are tested at $q = 0.05$ with Benjamini–Hochberg and four are rejected, although the second-smallest p-value, 0.011, exceeds its own threshold of 0.010. Is this a bug?**
    <details><summary>Answer</summary>
+
    No. BH is a step-up procedure: it finds the *largest* $k$ with $p_{(k)} \le kq/m$ and rejects all $k$ smallest p-values, regardless of whether each one passed individually. The guarantee is on the expected proportion of false discoveries among the rejections, not on each rejection separately. Holm, a step-down FWER procedure, would stop at the first failure and reject only one.
+
    </details>
 8. **An experimenter plans 1,000 users per arm but checks every 50 users and stops at the first $p < 0.05$. Roughly what is the real false-positive rate, and name two valid alternatives that still allow early stopping.**
    <details><summary>Answer</summary>
+
    About 25% with 20 looks (Armitage et al.; the lesson notebook reproduces it). Valid alternatives: a group-sequential design with pre-specified looks and boundaries (Pocock's constant boundary, about $|Z| > 2.67$ for 20 looks, or O'Brien–Fleming's strict-early boundaries), or always-valid sequential p-values that control the probability of *ever* crossing $\alpha$. A Bayesian decision rule is a third option but provides a different guarantee, not frequentist error control.
+
    </details>
 9. **Model B beats model A by 0.3 accuracy points on a 10,000-example test set, and a naive paired t-test over $10 \times 10$-fold cross-validation gives $p = 0.001$. Give two reasons to distrust the conclusion and the test you would run instead.**
    <details><summary>Answer</summary>
+
    First, the standard error of an accuracy near 90–95% on 10,000 examples is about 0.2–0.3 points, so 0.3 points is within noise unless the paired comparison is sharp; McNemar's test on the discordant counts is the right test for one test set. Second, the 100 cross-validation differences are correlated because folds share training data, so the naive t-test is several times too confident; the Nadeau–Bengio corrected statistic multiplies the variance by $(1/J + n_{\text{test}}/n_{\text{train}})/(1/J)$, here about 12, which turns $t = 3.3$ into $t \approx 1$. Report variance over seeds as well.
+
    </details>
 10. **Why is "randomise" the answer to Simpson's paradox in an experiment, and what does blocking add?**
     <details><summary>Answer</summary>
+
     Simpson's paradox arises when treatment assignment is associated with a covariate that also affects the outcome (device type, severity), so that aggregated and stratified comparisons disagree. Randomisation makes assignment independent of every covariate, measured or not, so the aggregate comparison is unbiased for the average effect. Blocking (stratified randomisation) additionally *guarantees* balance on a known important covariate in the realised sample rather than only in expectation, and removes its variance from the comparison, which increases power.
+
     </details>
 
 ## Further reading

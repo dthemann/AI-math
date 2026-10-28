@@ -309,52 +309,72 @@ Suppose the base frequency is 0.12 claims per policy-year, the relativity for dr
 
 1. **Why is $\mathbb{E}[Y\mid X]$ the best predictor under squared loss, and what is the risk of that predictor?**
    <details><summary>Answer</summary>
+
    For any $f$, $\mathbb{E}[(Y - f(X))^2] = \mathbb{E}[(Y - f^*(X))^2] + \mathbb{E}[(f^*(X) - f(X))^2]$ with $f^* = \mathbb{E}[Y\mid X]$, because the cross term has zero conditional mean. The second term is non-negative and zero only for $f = f^*$. The risk of $f^*$ is $\mathbb{E}[\operatorname{Var}(Y\mid X)]$, the irreducible noise.
+
    </details>
 
 2. **Give the one-line geometric argument for the normal equations.**
    <details><summary>Answer</summary>
+
    The fitted vector $X\hat\beta$ is the orthogonal projection of $y$ onto the column space of $X$, so the residual $y - X\hat\beta$ is orthogonal to every column: $X^\top(y - X\hat\beta) = 0$, i.e. $X^\top X\hat\beta = X^\top y$.
+
    </details>
 
 3. **What does the Gauss–Markov theorem assume, and what does it *not* say?**
    <details><summary>Answer</summary>
+
    It assumes a correctly specified linear mean, errors with zero mean, constant variance and no correlation. It says OLS has the smallest variance among *linear unbiased* estimators. It does not require normality, and it does not say OLS has the smallest mean squared error overall — biased estimators such as ridge can beat it.
+
    </details>
 
 4. **A ridge fit uses a design matrix whose singular values are $10, 3, 0.1$. With $\lambda = 1$, by what factor is the OLS coefficient along each singular direction multiplied, and what is $\operatorname{df}(\lambda)$?**
    <details><summary>Answer</summary>
+
    Filter factors $d_j^2/(d_j^2 + \lambda)$: $100/101 = 0.990$, $9/10 = 0.900$, $0.01/1.01 = 0.0099$. The weak direction is essentially removed. $\operatorname{df}(1) = 0.990 + 0.900 + 0.010 = 1.90$ instead of $3$.
+
    </details>
 
 5. **For an orthonormal design, OLS gives coefficients $(2.5, -0.8, 0.3)$. What do lasso and ridge return with $\lambda = 0.5$?**
    <details><summary>Answer</summary>
+
    Lasso (soft-thresholding): $(2.0, -0.3, 0)$. Ridge ($\div(1 + \lambda)$): $(1.667, -0.533, 0.2)$. Lasso zeroes the small coefficient and shifts the others by a constant; ridge scales all of them by the same factor and zeroes none.
+
    </details>
 
 6. **Why does the unpenalised logistic-regression MLE fail to exist on linearly separable data, and what does an L2 penalty change?**
    <details><summary>Answer</summary>
+
    If $\beta$ separates the classes, $c\beta$ with $c \to \infty$ pushes every $p_i$ towards its label and the negative log-likelihood towards its infimum $0$ without attaining it, so no finite maximiser exists. Adding $\frac{\lambda}{2}\lVert\beta\rVert^2$ makes the objective strictly convex and coercive (it grows without bound as $\lVert\beta\rVert \to \infty$), so a unique finite minimiser exists.
+
    </details>
 
 7. **In a Poisson GLM with log link, the coefficient on "weekend" is $-0.4$. Interpret it, and explain what an offset does.**
    <details><summary>Answer</summary>
+
    The expected count on weekends is $e^{-0.4} = 0.67$ times the weekday count — a rate ratio of 0.67, i.e. 33 % fewer events, all else equal. An offset $\log t_i$ added to the linear predictor with a fixed coefficient of 1 makes the model describe the *rate* per unit exposure, so observations with different exposures (policy durations, populations, time windows) are comparable.
+
    </details>
 
 8. **A model has training MSE 1.0 and 10-fold CV MSE 1.1 at $n = 200$; doubling the data gives 1.05 and 1.08. Bias or variance problem? What would you try?**
    <details><summary>Answer</summary>
+
    The train and validation errors are close and barely improve with more data: the model is bias-limited (underfitting). More data will not help; add features, interactions or a richer basis, or reduce the regularisation. A variance problem would show a large train–validation gap that narrows as $n$ grows.
+
    </details>
 
 9. **You pick $\lambda$ by 5-fold CV from a grid of 50 values and report the CV error of the winner. Why is that number too optimistic, and what fixes it?**
    <details><summary>Answer</summary>
+
    Each CV error is a noisy estimate; the minimum of 50 noisy estimates is biased downward (you have partly selected on noise). Nested CV — select $\lambda$ with an inner loop on each outer training fold and evaluate on the outer test fold — or a single untouched test set gives an unbiased estimate of the selected model's performance.
+
    </details>
 
 10. **Two standardised features have correlation 0.98. What is their VIF, what does it imply for the OLS coefficients, and does it hurt predictions?**
    <details><summary>Answer</summary>
+
    $\operatorname{VIF} = 1/(1 - 0.98^2) = 25.3$: coefficient standard errors are $\sqrt{25.3} \approx 5$ times larger than if the features were uncorrelated, and the two estimates will be large with opposite signs and highly unstable across samples. Predictions within the range of the data are largely unaffected, because only the *sum* of the two effects is well determined; ridge or dropping one feature stabilises the coefficients.
+
    </details>
 
 ## Further reading

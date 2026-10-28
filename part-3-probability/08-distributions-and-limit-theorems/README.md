@@ -337,43 +337,63 @@ An insurer models individual claim sizes two ways. Model E is Exponential with m
 
 1. **A model's validation accuracy is 0.85 on 400 examples. What is the standard error, and which distribution did you just use?**
    <details><summary>Answer</summary>
+
    Each prediction is a Bernoulli(0.85) trial, the number of correct predictions is Binomial(400, 0.85), and the accuracy is its mean divided by $n$, with standard error $\sqrt{0.85 \times 0.15/400} = 0.018$. The Normal shape of the error bar comes from the CLT; the Binomial supplies the variance. A difference of one or two points between two such models is within noise.
+
    </details>
 2. **Calls arrive at 6 per hour. What is the probability of no call in the next 20 minutes, and how is this a statement about two different distributions?**
    <details><summary>Answer</summary>
+
    The count in 20 minutes is Poisson(2), so $P(0) = e^{-2} = 0.135$. Equivalently the waiting time to the next call is Exponential(6 per hour) and $P(T > 1/3\text{ h}) = e^{-6/3} = e^{-2}$. "No events in the window" and "the first gap exceeds the window" are the same event, which is exactly how the Exponential inter-arrival distribution is derived from the Poisson process.
+
    </details>
 3. **Why does the Binomial(n, p) converge to a Poisson, and what single condition must hold?**
    <details><summary>Answer</summary>
+
    Fix the mean $\lambda = np$ and let $n \to \infty$ with $p = \lambda/n \to 0$. In $\binom{n}{k}p^k(1-p)^{n-k}$ the factor $\frac{n(n-1)\cdots(n-k+1)}{n^k} \to 1$, $(1-\lambda/n)^n \to e^{-\lambda}$ and $(1-\lambda/n)^{-k} \to 1$, leaving $e^{-\lambda}\lambda^k/k!$. The condition is "many trials, each rare, fixed expected count": $n$ large with $np$ moderate.
+
    </details>
 4. **A colleague says the Exponential is a good model for the lifetime of car tyres because "it is the standard lifetime distribution". What is wrong?**
    <details><summary>Answer</summary>
+
    The Exponential has a constant hazard rate: a tyre with 60,000 km on it would be exactly as likely to fail in the next 1,000 km as a new tyre. Tyres wear out, so their hazard increases with age, and the Exponential's memorylessness is precisely the wrong property. A Weibull with shape parameter above 1 (increasing hazard) or a Gamma with shape above 1 is appropriate; the Exponential fits components in their useful-life phase, such as electronics, not wear-out failures.
+
    </details>
 5. **You have a Beta(3, 7) belief about a click-through rate and observe 10 clicks in 40 impressions. What is the posterior, its mean, and how does it compare with the raw rate?**
    <details><summary>Answer</summary>
+
    Add successes to $a$ and failures to $b$: Beta(13, 37). Its mean is $13/50 = 0.26$, between the raw rate $10/40 = 0.25$ and the prior mean $3/10 = 0.3$, pulled slightly toward the prior because the prior counts as 10 pseudo-observations against 40 real ones. The standard deviation is $\sqrt{13 \times 37/(50^2 \times 51)} = 0.061$. As data accumulate the prior's influence fades.
+
    </details>
 6. **Show in two lines that the sum of two independent Normals is Normal.**
    <details><summary>Answer</summary>
+
    $M_{X_1}(t)M_{X_2}(t) = \exp(\mu_1 t + \sigma_1^2t^2/2)\exp(\mu_2 t + \sigma_2^2 t^2/2) = \exp\big((\mu_1+\mu_2)t + (\sigma_1^2+\sigma_2^2)t^2/2\big)$, which is the MGF of $\mathcal{N}(\mu_1+\mu_2, \sigma_1^2+\sigma_2^2)$; by uniqueness of MGFs the sum has that distribution. Note this is *exact*, unlike the CLT.
+
    </details>
 7. **The CLT seems to work for averages of 30 dice but not for averages of 30 Bernoulli(0.01) variables. Why?**
    <details><summary>Answer</summary>
+
    Convergence speed is governed by skewness (Berry–Esseen: error $\propto \rho/(\sigma^3\sqrt{n})$). A die is symmetric ($\gamma_1 = 0$) and the mean of 30 is already bell-shaped. A Bernoulli(0.01) has skewness $0.98/\sqrt{0.0099} = 9.85$; the mean of 30 has skewness $9.85/\sqrt{30} = 1.8$ and is essentially a count of 0, 1 or 2 rare events. You need $n$ in the thousands — roughly $(9.85/0.3)^2 \approx 1{,}000$ for skewness 0.3, about $9{,}700$ for skewness 0.1.
+
    </details>
 8. **Daily losses of a trading desk are averaged over 250 days and the average is reported with a Normal confidence interval. Under what circumstances is that interval meaningless?**
    <details><summary>Answer</summary>
+
    When the loss distribution has infinite variance (a power-law tail with $\alpha \le 2$, as heavy-tailed financial losses may), the CLT does not apply: the average is dominated by the largest few losses, its fluctuations do not shrink like $1/\sqrt{n}$, and the sample standard deviation is itself unstable, so the interval has no coverage guarantee. Also when the days are strongly dependent (volatility clustering), the effective sample size is far below 250. Check the tail with a log–log plot of exceedances and report quantiles rather than the mean.
+
    </details>
 9. **A Monte Carlo estimate with 10,000 samples has standard error 0.02. You need 0.002. How many samples, and name one cheaper route.**
    <details><summary>Answer</summary>
+
    The standard error falls like $1/\sqrt{n}$, so a tenfold reduction needs 100 times the samples: $n = 10^6$. Cheaper: reduce $\sigma_g$ instead — antithetic variates for a monotone integrand, a control variate with known mean, or importance sampling from a distribution that concentrates samples where $g$ is large. In the lesson notebook antithetic sampling of $e^{-U^2}$ cuts the variance 25-fold, equivalent to 25 times the samples.
+
    </details>
 10. **Why does minimising mean-squared error correspond to assuming Gaussian noise, and what would you minimise under Laplace noise?**
     <details><summary>Answer</summary>
+
     If $y = f(x) + \varepsilon$ with $\varepsilon \sim \mathcal{N}(0, \sigma^2)$, then $-\log p(y \mid x) = (y - f(x))^2/(2\sigma^2) + \text{const}$, so the maximum-likelihood fit minimises the sum of squared errors. Laplace noise has density $\propto e^{-|\varepsilon|/b}$, whose negative log is $|y - f(x)|/b$: maximum likelihood then minimises the mean *absolute* error, which is why MAE is the robust choice when outliers are expected — the Laplace has heavier tails than the Normal.
+
     </details>
 
 ## Further reading

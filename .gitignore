@@ -12,8 +12,11 @@ venv/
 # OS / editors
 .DS_Store
 Thumbs.db
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
 
 # Build artefacts
 *.zip
+build/
+*.pdf

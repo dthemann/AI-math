@@ -306,43 +306,63 @@ A network is trained on a dataset of 50,000 examples; for a fixed parameter vect
 
 1. **Two events have $P(A) = 0.5$, $P(B) = 0.4$ and $P(A \cup B) = 0.7$. Are they independent? Mutually exclusive?**
    <details><summary>Answer</summary>
+
    Inclusion–exclusion gives $P(A \cap B) = 0.5 + 0.4 - 0.7 = 0.2 = 0.5 \times 0.4$, so they are independent. They are not mutually exclusive, since $P(A \cap B) \ne 0$. Note that independent events with positive probabilities can never be mutually exclusive.
+
    </details>
 2. **Why does a test with 99% sensitivity and 95% specificity give a PPV of only 17% at 1% prevalence? What would raise the PPV most: sensitivity 99.9% or specificity 99%?**
    <details><summary>Answer</summary>
+
    The 5% false-positive rate acts on the 99% of people who are healthy, producing 495 false positives per 10,000 against 99 true positives. Raising sensitivity to 99.9% barely changes the numerator (99 → 99.9); raising specificity to 99% cuts false positives to 99, lifting the PPV to about 50%. At low prevalence, specificity dominates.
+
    </details>
 3. **A continuous random variable has $f_X(2) = 3$. What is $P(X = 2)$, and what does the 3 mean?**
    <details><summary>Answer</summary>
+
    $P(X = 2) = 0$ for any continuous variable. The density 3 means that a small interval of width $dx$ around 2 has probability about $3\,dx$: the variable is three times "denser" there than where $f = 1$. Densities can exceed 1; only their integrals are probabilities.
+
    </details>
 4. **State the law of total probability and explain in one sentence why it is just additivity.**
    <details><summary>Answer</summary>
+
    For a partition $B_1, \dots, B_n$ of $\Omega$, $P(A) = \sum_i P(A \mid B_i)P(B_i)$. The sets $A \cap B_i$ are disjoint and their union is $A$, so additivity gives $P(A) = \sum_i P(A \cap B_i)$, and the multiplication rule rewrites each term as $P(A \mid B_i)P(B_i)$.
+
    </details>
 5. **You know $\mathbb{E}[X] = 2$ and $\mathbb{E}[Y] = 5$ but nothing about their dependence. What is $\mathbb{E}[3X - Y + 1]$? What can you say about $\operatorname{Var}(X + Y)$?**
    <details><summary>Answer</summary>
+
    By linearity $\mathbb{E}[3X - Y + 1] = 6 - 5 + 1 = 2$, no matter how $X$ and $Y$ depend on each other. About the variance you can say nothing without the covariance: $\operatorname{Var}(X + Y) = \operatorname{Var}X + \operatorname{Var}Y + 2\operatorname{Cov}(X, Y)$, which could be anywhere from $(\sigma_X - \sigma_Y)^2$ to $(\sigma_X + \sigma_Y)^2$.
+
    </details>
 6. **$X \sim \text{Uniform}(0, 1)$ and $Y = -\ln X$. Find the density of $Y$.**
    <details><summary>Answer</summary>
+
    $g(x) = -\ln x$ is strictly decreasing with inverse $x = e^{-y}$, derivative $-e^{-y}$. Hence $f_Y(y) = f_X(e^{-y})\,\lvert -e^{-y} \rvert = e^{-y}$ for $y > 0$: the exponential distribution with rate 1. This is inverse-CDF sampling in disguise, since $-\ln(1 - U)$ and $-\ln U$ have the same distribution.
+
    </details>
 7. **A Monte Carlo estimate of a probability near 0.5 uses $n = 2{,}500$ samples. What is its standard error, and how many samples would halve it?**
    <details><summary>Answer</summary>
+
    $\sqrt{0.5 \times 0.5 / 2{,}500} = 0.5/50 = 0.01$. Halving the error requires four times the samples, $n = 10{,}000$, because the error decreases like $1/\sqrt{n}$.
+
    </details>
 8. **Chebyshev says $P(\lvert X - \mu\rvert \ge 3\sigma) \le 1/9 \approx 0.11$, yet for a normal distribution the probability is about 0.0027. Is Chebyshev wrong?**
    <details><summary>Answer</summary>
+
    No — it is a bound that holds for *every* distribution with finite variance, including nasty ones (e.g. a three-point distribution that puts mass exactly $1/9$ at $\mu \pm 3\sigma$, for which the bound is tight). The normal is a very well-behaved special case. The price of a distribution-free guarantee is looseness.
+
    </details>
 9. **Why does naive Bayes work in log space, and why is smoothing necessary even if you work in log space?**
    <details><summary>Answer</summary>
+
    Products of hundreds of probabilities underflow to 0 in floating point; sums of their logarithms do not. Smoothing addresses a different problem: a word never seen in a class has estimated probability 0, so $\log 0 = -\infty$ vetoes that class regardless of the other words. Add-one smoothing gives every word a small positive probability in every class.
+
    </details>
 10. **Your spam filter's features "free" and "money" are conditionally independent given the class. Does that mean they are independent?**
     <details><summary>Answer</summary>
+
     No. Marginally, both are much more common in spam, so seeing "free" raises the probability that the message is spam and hence that "money" appears too: $P(\text{money} \mid \text{free}) > P(\text{money})$. Conditioning on the class removes exactly this shared cause. Conditional independence given $C$ and marginal independence are separate properties; neither implies the other.
+
     </details>
 
 ## Further reading

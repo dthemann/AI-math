@@ -380,43 +380,63 @@ Now add the fact that the rewards are a *model's* estimates. Suppose response 4'
 
 1. **An agent with $\gamma = 0.9$ faces a choice between a reward of 10 now and a reward of 30 in ten steps. Which does it prefer, and at what $\gamma$ would it be indifferent?**
    <details><summary>Answer</summary>
+
    The delayed reward is worth $30 \cdot 0.9^{10} \approx 30 \cdot 0.349 = 10.46 > 10$, so it prefers to wait — barely. Indifference requires $30\gamma^{10} = 10$, i.e. $\gamma = (1/3)^{1/10} \approx 0.896$. Below that the agent takes the 10 now. The discount factor is part of the problem specification, not a tuning knob.
+
    </details>
 2. **Why does UCB1 use $\ln t$ rather than a constant in the bonus, and what happens to the bonus of an arm that is never pulled?**
    <details><summary>Answer</summary>
+
    The confidence level tightens as $t$ grows ($t^{-4}$ in the Hoeffding derivation), so the bound stays valid simultaneously over all rounds; a constant bonus would stop exploring arms whose estimates happened to look bad. An arm that is never pulled keeps $N_a$ fixed while $\ln t$ grows, so its bonus increases without limit and it is eventually pulled again — every arm is sampled infinitely often, but at a logarithmic rate.
+
    </details>
 3. **Thompson sampling with a $\text{Beta}(1,1)$ prior has pulled arm 1 ten times with 7 successes and arm 2 twice with 2 successes. Which arm is more likely to be pulled next, and why is the answer not obvious from the means alone?**
    <details><summary>Answer</summary>
+
    Posteriors are $\text{Beta}(8, 4)$ (mean $0.667$, sd $\approx 0.13$) and $\text{Beta}(3, 1)$ (mean $0.75$, sd $\approx 0.19$). Arm 2 has the higher mean and the wider posterior, so it is pulled more often than not — but arm 1 is pulled whenever its draw exceeds arm 2's, which happens a substantial fraction of the time because the posteriors overlap heavily. Probability matching allocates pulls by the posterior probability of being best, which depends on the spread as well as the mean.
+
    </details>
 4. **State the Bellman expectation equation for $V^\pi$ in matrix form and explain why $I - \gamma P^\pi$ is invertible.**
    <details><summary>Answer</summary>
+
    $V^\pi = R^\pi + \gamma P^\pi V^\pi$, so $(I - \gamma P^\pi)V^\pi = R^\pi$. $P^\pi$ is row-stochastic, so all its eigenvalues have modulus at most 1 and those of $\gamma P^\pi$ have modulus at most $\gamma < 1$; hence $1$ is not an eigenvalue of $\gamma P^\pi$ and $I - \gamma P^\pi$ is non-singular. Its inverse is the Neumann series $\sum_k \gamma^k (P^\pi)^k$, which is the return written as a sum over time steps.
+
    </details>
 5. **Value iteration on an MDP with $\gamma = 0.99$ starts with $\lVert V_0 - V^*\rVert_\infty = 100$. How many sweeps guarantee an error below $0.01$? What if $\gamma = 0.9$?**
    <details><summary>Answer</summary>
+
    We need $\gamma^k \cdot 100 \le 0.01$, i.e. $k \ge \ln(10^4)/\ln(1/\gamma)$. For $\gamma = 0.99$ that is $9.21/0.01005 \approx 917$ sweeps; for $\gamma = 0.9$ it is $9.21/0.1054 \approx 88$. The sweep count scales like $1/(1-\gamma)$ — a long horizon makes planning slow, which is one reason policy iteration (few expensive iterations) is attractive for large $\gamma$.
+
    </details>
 6. **A learner says: "I ran value iteration until successive iterates differed by less than $10^{-3}$, so my values are accurate to $10^{-3}$." Is that right?**
    <details><summary>Answer</summary>
+
    Not quite. From $\lVert V_{k+1} - V_k\rVert_\infty \le \epsilon$ and the contraction property, $\lVert V_{k+1} - V^*\rVert_\infty \le \epsilon\gamma/(1-\gamma)$. With $\gamma = 0.9$ the guarantee is $9 \times 10^{-3}$, with $\gamma = 0.99$ it is $0.099$ — a hundred times the stopping threshold. The greedy policy is usually correct long before the values are, but the value accuracy claim needs the $1/(1-\gamma)$ factor.
+
    </details>
 7. **In cliff walking, Q-learning's greedy path runs along the cliff edge while SARSA's stays several rows away, yet Q-learning's path is shorter. Which agent collects more reward *during training* with ε = 0.1, and why?**
    <details><summary>Answer</summary>
+
    SARSA. Q-learning learns $Q^*$, the value of the greedy policy, and its optimal path is the shortest one — but while training it still explores with probability 0.1, and random steps next to the cliff cost $-100$. SARSA learns the value of the ε-greedy policy it actually follows, so it accounts for its own slips and prefers the safe route; its training returns are higher even though its greedy path is longer. Once exploration is switched off, Q-learning's policy is the better one.
+
    </details>
 8. **Why is TD(0) said to be biased, and why does that not stop it from converging?**
    <details><summary>Answer</summary>
+
    The target $r + \gamma V(s')$ uses the current estimate $V(s')$, which is wrong during learning, so the expected update direction is not the one that an unbiased sample of $V^\pi(s)$ would give. But the update is a stochastic approximation of the Bellman operator, which is a contraction with fixed point $V^\pi$; with Robbins–Monro step sizes and sufficient visitation the bias disappears in the limit. The variance saved by bootstrapping is what makes TD competitive with Monte Carlo on finite data.
+
    </details>
 9. **Prove in two lines that subtracting a baseline $b(s)$ from the return leaves the policy gradient unbiased. Would a baseline $b(s, a)$ also be fine?**
    <details><summary>Answer</summary>
+
    $\mathbb{E}_{a\sim\pi}[b(s)\nabla\log\pi(a \mid s)] = b(s)\sum_a \nabla\pi(a \mid s) = b(s)\nabla\sum_a\pi(a \mid s) = b(s)\nabla 1 = 0$. An action-dependent $b(s, a)$ cannot be pulled out of the sum, so $\sum_a b(s, a)\nabla\pi(a \mid s)$ is generally non-zero and the estimate becomes biased (special constructions with a correction term exist, but a plain action-dependent baseline is not free).
+
    </details>
 10. **Derive the optimal policy for maximising $\mathbb{E}_\pi[r] - \beta\operatorname{KL}(\pi\,\|\,\pi_{\text{ref}})$ and explain what $\beta \to 0$ and $\beta \to \infty$ give.**
     <details><summary>Answer</summary>
+
     Write the objective as $-\beta\operatorname{KL}(\pi\,\|\,\pi^*) + \beta\log Z$ with $\pi^* \propto \pi_{\text{ref}}\,e^{r/\beta}$; since KL is non-negative and zero only at $\pi = \pi^*$, the optimum is $\pi^*$. As $\beta \to \infty$ the exponent flattens and $\pi^* \to \pi_{\text{ref}}$ (no fine-tuning); as $\beta \to 0$ the Boltzmann factor concentrates on the highest-reward response with positive reference probability (greedy reward maximisation, maximal KL). DPO's loss is obtained by solving this form for $r$ and substituting into the Bradley–Terry likelihood, where $\log Z$ cancels.
+
     </details>
 
 ## Further reading
