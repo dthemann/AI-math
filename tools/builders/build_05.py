@@ -64,19 +64,32 @@ for w in [1.5, 2.0, 2.1]:
 print(f"closed form: w* = {w_star:.4f},  L(w*) = {loss_1d(w_star):.4f},  dL/dw(w*) = {dloss_1d(w_star):+.1e}")
 
 ws = np.linspace(0.5, 3.5, 300)
+w_tab = np.array([1.5, 2.0, 2.1])                      # the three tabulated points
 fig, ax = plt.subplots(1, 2, figsize=(11, 4))
 ax[0].plot(ws, [loss_1d(w) for w in ws], label="L(w)")
 ax[0].plot(ws, [dloss_1d(w) for w in ws], label="dL/dw", alpha=0.7)
+ax[0].plot(w_tab, [dloss_1d(w) for w in w_tab], "ko", ms=4, label="dL/dw at w = 1.5, 2.0, 2.1")
 ax[0].axhline(0, color="gray", lw=0.8)
-ax[0].axvline(w_star, color="gray", ls="--", lw=0.8)
+ax[0].axvline(w_star, color="gray", ls="--", lw=0.8, label=f"w* = {w_star:.3f}")
 ax[0].set_title("A 1-D loss landscape: y ~ w x on three points")
-ax[0].set_xlabel("w"); ax[0].set_ylabel("value"); ax[0].legend()
+ax[0].set_xlabel("w"); ax[0].set_ylabel("value"); ax[0].legend(fontsize=8, loc="upper left")
+# zoom on the sign change of dL/dw between w = 2.0 and w = 2.1
+inset = ax[0].inset_axes([0.62, 0.14, 0.35, 0.33])
+wz = np.linspace(1.9, 2.2, 50)
+inset.plot(wz, [dloss_1d(w) for w in wz], color="C1")
+inset.plot(w_tab[1:], [dloss_1d(w) for w in w_tab[1:]], "ko", ms=4)
+for w in w_tab[1:]:
+    inset.annotate(f"{dloss_1d(w):+.3f}", (w, dloss_1d(w)), textcoords="offset points",
+                   xytext=(-34, 12) if w < w_star else (5, -11), fontsize=7)
+inset.axhline(0, color="gray", lw=0.8); inset.axvline(w_star, color="gray", ls="--", lw=0.8)
+inset.set_title("zoom: dL/dw near w*", fontsize=7); inset.set_xlabel("w", fontsize=7); inset.set_ylabel("dL/dw", fontsize=7)
+inset.tick_params(labelsize=6)
 
 X, Y = np.meshgrid(np.linspace(-2, 2, 101), np.linspace(-2, 2, 101))
 cs = ax[1].contour(X, Y, X ** 2 - Y ** 2, levels=np.linspace(-4, 4, 17), cmap="coolwarm")
 ax[1].clabel(cs, fmt="%.0f", fontsize=7)
 ax[1].plot(0, 0, "ko"); ax[1].annotate("saddle", (0.1, 0.1))
-ax[1].set_title("f(x, y) = x^2 - y^2: a stationary point that is not a minimum")
+ax[1].set_title("f(x, y) = x^2 - y^2: stationary, but not a minimum")
 ax[1].set_xlabel("x"); ax[1].set_ylabel("y")
 plt.tight_layout(); plt.show()
 """)
@@ -88,6 +101,46 @@ right, the contours of $x^2 - y^2$ form a cross at the origin: the Hessian $\mat
 has one positive and one negative eigenvalue. In high dimensions saddles are far more common than
 local minima, and most "the loss has plateaued" moments in deep learning are slow passages near
 saddles, not convergence.
+
+What does gradient descent actually do near that saddle? The gradient is $(2x, -2y)$, so one step with
+step size $\eta$ multiplies $x$ by $1 - 2\eta$ and $y$ by $1 + 2\eta$. We start four runs at $x_0 = 1.5$,
+at different small distances $y_0$ from the $x$-axis, and follow both the path and the loss.
+""")
+
+nb.code(r"""
+eta_sad = 0.1                                   # x shrinks by 1 - 2 eta = 0.8 per step, y grows by 1 + 2 eta = 1.2
+Xs, Ys = np.meshgrid(np.linspace(-2, 2, 101), np.linspace(-2, 2, 101))
+fig, ax = plt.subplots(1, 2, figsize=(11, 4))
+ax[0].contour(Xs, Ys, Xs ** 2 - Ys ** 2, levels=np.linspace(-4, 4, 17), cmap="coolwarm", alpha=0.5)
+for y0, mk in [(0.3, "o"), (1e-2, "s"), (-1e-4, "^"), (0.0, "x")]:
+    p = np.array([1.5, y0]); path_sad = [p]
+    for _ in range(90):
+        p = p - eta_sad * np.array([2 * p[0], -2 * p[1]]); path_sad.append(p)
+    path_sad = np.array(path_sad); keep = np.abs(path_sad[:, 1]) <= 2        # stop drawing once the run has left the box
+    lab = f"start y0 = {y0:g}" + ("  (exactly on the x-axis)" if y0 == 0 else "")
+    ax[0].plot(path_sad[keep, 0], path_sad[keep, 1], marker=mk, ms=3, lw=1, label=lab)
+    ax[1].plot(np.flatnonzero(keep), (path_sad[:, 0] ** 2 - path_sad[:, 1] ** 2)[keep], marker=mk, ms=2, lw=1, label=lab)
+    if y0 != 0:
+        print(f"y0 = {y0:+g}: |y| reaches 1 after about ln(1/|y0|)/ln(1.2) = {np.log(1 / abs(y0)) / np.log(1 + 2 * eta_sad):.0f} steps")
+    else:
+        print(f"y0 = 0    : after 90 steps the iterate is at {path_sad[-1]} -- stuck on the saddle")
+ax[0].plot(1.5, 0, "k^", ms=8, label="common start (1.5, y0)"); ax[0].plot(0, 0, "ko", label="saddle")
+ax[0].set_title("GD near a saddle: slide in along x, escape along y"); ax[0].set_xlabel("x"); ax[0].set_ylabel("y")
+ax[0].legend(fontsize=7, loc="lower left")
+ax[1].axhline(0, color="gray", lw=0.8)
+ax[1].set_title("f along each path: escape after ~ ln(1/|y0|)/ln 1.2 steps"); ax[1].set_xlabel("GD step"); ax[1].set_ylabel("f(x, y)")
+ax[1].set_ylim(-4.5, 2.5); ax[1].legend(fontsize=7)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the start exactly on the $x$-axis slides into the saddle and stays there for ever,
+while every other start first slides in ($x$ shrinks by $1 - 2\eta = 0.8$ per step) and then escapes
+along $y$, which grows by $1 + 2\eta = 1.2$ per step. The loss falls to near $f = 0$ and stays there
+until the escape, when $\lvert y\rvert$ reaches 1 (and $f \approx -1$) after about
+$\ln(1/\lvert y_0\rvert)/\ln 1.2$ steps: 25 and 51 for the two small $y_0$, but only 7 for $y_0 = 0.3$, so
+early that there is hardly a plateau. The closer a run passes a saddle, the longer it looks converged.
+The sign of $y_0$ only decides which way it leaves.
 """)
 
 # ---------------------------------------------------------------- 2. convexity
@@ -157,6 +210,51 @@ of $X$ — a fact you will meet again as the bias–variance decomposition (Modu
 (Module 18). The chord picture is the definition of convexity made visible: for a convex function
 the dashed line would lie *above* the curve.
 
+Where does the tiny network's negative curvature come from? It has only two parameters, so we can
+draw its whole loss surface over $(a, w)$, mark the 60 test points by the sign of their smallest
+Hessian eigenvalue, and follow the loss along the straight line between its two lowest points.
+""")
+
+nb.code(r"""
+# the tiny network's loss over a grid of (a, w); no new random numbers are drawn here
+Ag, Wg = np.meshgrid(np.linspace(-6, 6, 121), np.linspace(-6, 6, 121))
+Zt = np.mean((Ag[..., None] * np.tanh(Wg[..., None] * x1) - y_pm) ** 2, axis=-1)
+i_min = np.unravel_index(np.argmin(Zt), Zt.shape)
+theta_min = np.array([Ag[i_min], Wg[i_min]])            # one minimum; its mirror image is -theta_min
+neg = np.array(min_eig_net) < -1e-8                     # test points with a negative-curvature direction
+print(f"grid minima at (a, w) = ({theta_min[0]:+.1f}, {theta_min[1]:+.1f}) and ({-theta_min[0]:+.1f}, {-theta_min[1]:+.1f}), "
+      f"loss {tiny_net_loss(theta_min):.3f} at both")
+print(f"loss at the midpoint (0, 0) = {tiny_net_loss(np.zeros(2)):.3f};  negative curvature at {neg.sum()} of 60 test points")
+
+fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
+lev = [0.3, 0.4, 0.6, 0.8, 1.0, 1.5, 2.5, 5.0]          # darker grey = higher loss
+ax[0].contourf(Ag, Wg, Zt, levels=[Zt.min()] + lev + [Zt.max()], cmap="Greys", alpha=0.45)
+cs = ax[0].contour(Ag, Wg, Zt, levels=lev, colors="k", linewidths=0.6, alpha=0.6)
+ax[0].clabel(cs, [0.3, 0.6, 1.0, 2.5], fmt="%.1f", fontsize=7)
+ax[0].plot(points[neg, 0], points[neg, 1], "o", color="crimson", ms=5, label="negative curvature (filled)")
+ax[0].plot(points[~neg, 0], points[~neg, 1], "o", mfc="white", mec="k", ms=5, label="no negative curvature (hollow)")
+ax[0].plot([theta_min[0], -theta_min[0]], [theta_min[1], -theta_min[1]], "k*--", ms=12, lw=1, label="the two minima and their chord")
+ax[0].set_title("Tiny tanh net: two mirror-image minima"); ax[0].set_xlabel("a (output weight)"); ax[0].set_ylabel("w (input weight)")
+ax[0].legend(fontsize=7, loc="lower right"); ax[0].set_aspect("equal")
+
+s = np.linspace(-0.5, 1.5, 201)
+line_pts = np.outer(1 - s, theta_min) + np.outer(s, -theta_min)  # theta(s) = (1 - s) theta_min + s (-theta_min)
+ax[1].plot(s, [tiny_net_loss(p) for p in line_pts], label="tiny-net loss along the line")
+ax[1].plot([0, 1], [tiny_net_loss(theta_min), tiny_net_loss(-theta_min)], "ko--", lw=1, label="chord between the two minima")
+ax[1].annotate(f"midpoint: loss {tiny_net_loss(np.zeros(2)):.3f}", (0.5, tiny_net_loss(np.zeros(2))),
+               textcoords="offset points", xytext=(12, 8), fontsize=8, arrowprops=dict(arrowstyle="->", lw=0.8))
+ax[1].set_title("Along the straight line between the minima")
+ax[1].set_xlabel("position s along the line (0 and 1 = the two minima)"); ax[1].set_ylabel("loss"); ax[1].legend(fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the tiny network has two mirror-image minima, $(a, w) \approx (1.0, 2.6)$ and
+$(-1.0, -2.6)$, because flipping both signs gives identical predictions ($-a\tanh(-wx) = a\tanh(wx)$,
+the one-neuron version of swapping hidden units). Halfway between them the loss is $1.000$, against
+$0.262$ at the ends, so the graph rises *above* the chord, which convexity forbids. The filled points,
+43 of 60, have a negative Hessian eigenvalue: for this model non-convexity is the rule, not the exception.
+
 **Try it yourself:** replace `tiny_net_loss` by the squared loss of a *linear* model
 `np.mean((theta[0] + theta[1] * x1 - y_pm) ** 2)` — the smallest eigenvalue should become
 non-negative everywhere.
@@ -206,8 +304,9 @@ for ax, eta in zip(axes.ravel(), [0.05, 0.15, 0.19, 0.21]):
     path = gradient_descent(lambda th: A @ th, x0, eta, 12)
     ax.contour(G1, G2, Z, levels=np.logspace(-1, 2.6, 14), cmap="viridis", alpha=0.7)
     ax.plot(path[:, 0], path[:, 1], "o-", color="crimson", ms=3, lw=1)
-    ax.plot(0, 0, "k*", ms=10)
-    ax.set_title(f"eta = {eta}  ->  |theta_12| = {np.linalg.norm(path[-1]):.2f}" + ("   DIVERGES" if eta > 2 / L else ""))
+    ax.plot(*x0, "k^", ms=8); ax.plot(0, 0, "k*", ms=10)
+    ax.set_title(f"eta = {eta}: L(theta_12) = {quad_loss(path[-1]):.2f}  (L(theta_0) = {quad_loss(x0):.0f})"
+                 + ("\nDIVERGES: eta > 2/L" if eta > 2 / L else ""))
     ax.set_xlabel("theta_1"); ax.set_ylabel("theta_2"); ax.set_aspect("equal")
     print(f"eta = {eta:.2f}: factors per step in the eigenbasis = {1 - eta * mu:+.2f} (flat), {1 - eta * L:+.2f} (stiff);"
           f"   loss after 12 steps = {quad_loss(path[-1]):.3f}")
@@ -218,7 +317,8 @@ nb.md(r"""
 Notice that for $\eta = 0.05$ the stiff direction is dealt with immediately but the flat direction
 shrinks by only $0.95$ per step; at $\eta = 0.19$ the stiff coordinate flips sign each step (factor
 $-0.9$) while the flat one shrinks by $0.81$ — the zig-zag; and at $\eta = 0.21$ the factor is
-$-1.1$: the oscillation grows without bound. **No constant step size can be good for both
+$-1.1$: the oscillation grows without bound (the loss climbs from 52 to 197 in 12 steps, even though
+the flat coordinate is still shrinking — the black triangle marks the start). **No constant step size can be good for both
 directions at once** — that is what the condition number measures, and it is why feature scaling,
 momentum and adaptive methods exist.
 """)
@@ -269,8 +369,9 @@ plt.tight_layout(); plt.show()
 nb.md(r"""
 Notice that the measured contraction matches $(\kappa-1)/(\kappa+1)$ to three or four decimals once
 the run is long enough to settle (for $\kappa = 5$ it ends after 14 steps), and the step count grows
-*linearly* in $\kappa$ (slope one on the log–log plot). The measured counts sit a little
-below the bound because a random start has only a small component along the slowest direction.
+*linearly* in $\kappa$ (slope one on the log–log plot). The measured counts sit below the
+bound (by 3 to 28%) because under $\eta^\star$ only the two extreme eigen-directions ($\mu$ and $L$)
+contract at the worst-case rate, and a random start puts only part of its length along them.
 
 ### Where the condition number comes from: feature scaling
 
@@ -291,7 +392,8 @@ for name, feature in [("raw year", years),
 
 nb.md(r"""
 Same data, same model, same optimum — but the raw parametrisation needs a step below
-$2.5\times10^{-7}$ and roughly $\kappa/2 \approx 5\times10^{10}$ of them, while the standardised one
+$2.5\times10^{-7}$ and roughly $\kappa/2 \approx 6\times10^{10}$ of them for every factor $e$ of error
+reduction, while the standardised one
 is solved in a single step. **Standardise your inputs** is a theorem about $\kappa$, not a
 superstition.
 
@@ -331,15 +433,60 @@ print(f"Hessian eigenvalues {ev}  ->  kappa = {ev[-1] / ev[0]:.1f},  2/L = {2 / 
 w0 = np.zeros(d)
 full_grad = grad_batch(w0, np.arange(n))
 per_example = 2.0 * X * (X @ w0 - y)[:, None]                     # n x d matrix of per-example gradients
+Sig = np.cov(per_example.T, bias=True)                            # population covariance Sigma of the per-example gradients
+print(f"full gradient at w0 = 0: {full_grad},  norm {np.linalg.norm(full_grad):.2f}")
 for b in [1, 8, 64]:
     est = np.array([grad_batch(w0, rng.choice(n, size=b, replace=False)) for _ in range(2000)])
     print(f"batch {b:3d}: mean of 2000 estimates - full gradient = {np.abs(est.mean(0) - full_grad).max():.3f} (max abs),"
-          f"   trace of covariance = {np.trace(np.cov(est.T)):8.2f}   prediction tr(Sigma)/b * (n-b)/(n-1) = {np.trace(np.cov(per_example.T)) / b * (n - b) / (n - 1):8.2f}")
+          f"   trace of covariance = {np.trace(np.cov(est.T)):8.2f}   prediction tr(Sigma)/b * (n-b)/(n-1) = {np.trace(Sig) / b * (n - b) / (n - 1):8.2f}")
 """)
 
 nb.md(r"""
-Notice that the mean of the estimates matches the full gradient to the second decimal (the residual
-is the Monte-Carlo error of 2000 draws), while the total variance falls almost exactly like $1/b$.
+The same facts as a picture: below, 300 fresh estimates per batch size are drawn in the plane of two
+gradient coordinates, each cloud with the two-standard-deviation ellipse of the predicted covariance
+(it would hold about 86% of a Gaussian cloud), and on the right the total variance is measured over a
+much wider range of batch sizes. A separate random generator is used so that the rest of the lesson
+sees the same random numbers as before.
+""")
+
+nb.code(r"""
+r_cloud = np.random.default_rng(11)                      # local generator: the global rng stream is left untouched
+j, k = 0, 3                                              # the two gradient coordinates to draw
+tt = np.linspace(0, 2 * np.pi, 200); circle = np.c_[np.cos(tt), np.sin(tt)]
+fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
+for b, colour in [(1, "tab:blue"), (8, "tab:orange"), (64, "tab:green")]:
+    est = np.array([grad_batch(w0, r_cloud.choice(n, size=b, replace=False)) for _ in range(300)])
+    ax[0].plot(est[:, j], est[:, k], ".", color=colour, ms=2, alpha=0.4)
+    C2 = Sig[np.ix_([j, k], [j, k])] / b * (n - b) / (n - 1)
+    ell = full_grad[[j, k]] + 2 * circle @ np.linalg.cholesky(C2).T         # the 2-standard-deviation ellipse
+    ax[0].plot(ell[:, 0], ell[:, 1], color=colour, lw=1.5, zorder=4, label=f"batch {b}: 300 estimates, 2-sd ellipse")
+    print(f"batch {b:2d}: largest distance of an estimate from the full gradient = {np.linalg.norm(est - full_grad, axis=1).max():5.1f}"
+          f"  (in the plotted plane: {np.linalg.norm(est[:, [j, k]] - full_grad[[j, k]], axis=1).max():4.1f})")
+ax[0].plot(*full_grad[[j, k]], "k*", ms=6, zorder=5, label="full gradient")
+ax[0].set_title("Mini-batch gradients scatter around the full gradient")
+ax[0].set_xlabel(f"gradient component {j + 1}"); ax[0].set_ylabel(f"gradient component {k + 1}")
+ax[0].legend(fontsize=7, loc="upper left"); ax[0].set_aspect("equal")
+
+bs = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512])
+tr_meas = [np.trace(np.cov(np.array([grad_batch(w0, r_cloud.choice(n, size=b, replace=False)) for _ in range(300)]).T)) for b in bs]
+ax[1].loglog(bs, tr_meas, "o", label="measured (300 draws each)")
+ax[1].loglog(bs, np.trace(Sig) / bs * (n - bs) / (n - 1), "-", label="tr(Sigma)/b * (n-b)/(n-1)")
+ax[1].set_title("Total variance of the estimate falls like 1/b")
+ax[1].set_xlabel("batch size b"); ax[1].set_ylabel("trace of covariance"); ax[1].legend(fontsize=8)
+plt.tight_layout(); plt.show()
+print("measured trace of covariance:", np.round(tr_meas, 2))
+""")
+
+nb.md(r"""
+**Notice that** every cloud is centred on the star (the estimate is unbiased) and each ellipse is
+$\sqrt8 \approx 2.8$ times smaller than the previous one. The printed means agree with the full
+gradient (norm 5.6) to within the Monte-Carlo error of 2000 draws: the largest deviations, 0.07, 0.12
+and 0.01, are about two standard errors or less. On the right the measured variance follows
+$\operatorname{tr}\Sigma/b\cdot(n-b)/(n-1)$ over nearly three decades of $b$. The batch-1 cloud is also
+heavy-tailed: single-example gradients land up to about 44 units from the star in this plane, and up
+to 81 units away in all five coordinates, against a full gradient of norm 5.6 — which is why
+per-example SGD needs small steps.
+
 Now the training runs. We use $\eta = 1/L$ for every batch size; each run gets 20 epochs.
 """)
 
@@ -365,19 +512,28 @@ for b in [8, 32, 128, n]:
     print(f"batch {b:5d} ({spe:4d} steps/epoch): excess loss after epoch 1 = {hist[spe - 1] - mse(w_ols):.4f},"
           f"   mean excess over last epoch = {hist[-spe:].mean() - mse(w_ols):.2e}")
 
+excess0 = mse(np.zeros(d)) - mse(w_ols)                 # common starting point at epoch 0
 plt.figure(figsize=(8, 4))
-for b, (w_b, hist) in runs.items():
-    ep = np.arange(1, len(hist) + 1) / (n // b)
-    plt.semilogy(ep, hist - mse(w_ols), label=f"batch {b}" + (" (full GD)" if b == n else ""), lw=1)
-plt.title("Excess loss L(w) - L(w_ols) versus epochs, eta = 1/L for all runs")
-plt.xlabel("epochs (passes over the data)"); plt.ylabel("excess loss"); plt.legend(); plt.show()
+for i_run, (b, (w_b, hist)) in enumerate(runs.items()):
+    spe = n // b
+    ep = np.arange(0, len(hist) + 1) / spe
+    plt.semilogy(ep, np.r_[excess0, hist - mse(w_ols)], color=f"C{i_run}", lw=0.5, alpha=0.3)
+    epoch_means = np.r_[excess0, hist.reshape(epochs, spe).mean(1) - mse(w_ols)]   # mean excess over each epoch
+    plt.semilogy(np.arange(epochs + 1), epoch_means, "o-", color=f"C{i_run}", ms=3, lw=2,
+                 label=f"batch {b}" + (" (full GD)" if b == n else ""))
+plt.title("Excess loss L(w) - L(w_ols): per-step (faint) and per-epoch mean (bold), eta = 1/L")
+plt.xlabel("epochs (passes over the data)"); plt.ylabel("excess loss"); plt.legend(loc="upper right"); plt.show()
 """)
 
 nb.md(r"""
 Notice three things. (1) Per epoch, SGD wins by a landslide: full GD takes one step per pass and
-after 20 passes is only where batch-8 SGD was after a fraction of *one* pass. (2) Smaller batches plateau at a *higher noise floor*: with a constant step the iterates
-hover in a "noise ball" whose variance is $\propto \eta\sigma^2/b$. (3) Batch 128 is the sweet spot
-here — low noise, 15 steps per epoch.
+after 20 passes is only where batch-8 SGD was after a fraction of *one* pass. (By epoch 20 full GD has
+caught up with batch 8's noise floor, about $5\times10^{-2}$; batches 32 and 128 end about 6 and 28 times
+lower.) (2) Smaller batches
+plateau at a *higher noise floor*: the bold per-epoch means level off at about $5\times10^{-2}$
+(batch 8), $8\times10^{-3}$ (batch 32) and $2\times10^{-3}$ (batch 128), because with a constant step
+the iterates hover in a "noise ball" whose variance is $\propto \eta\sigma^2/b$. (3) Batch 128 is the
+sweet spot here — low noise, 15 steps per epoch.
 
 The cure for the noise floor is a **decaying step size**. Below we re-run batch 8 with a
 $1/t$-type decay and a cosine schedule, and also verify the noise-ball formula
@@ -391,13 +547,16 @@ _, hist_const = runs[8]
 _, hist_inv = sgd(8, eta, epochs, seed=1, schedule=lambda t: eta / (1 + t / spe))
 _, hist_cos = sgd(8, eta, epochs, seed=1, schedule=lambda t: eta * 0.5 * (1 + np.cos(np.pi * t / (epochs * spe))))
 for name, h in [("constant", hist_const), ("1/t decay", hist_inv), ("cosine decay", hist_cos)]:
-    print(f"batch 8, {name:13s}: excess loss at the end = {h[-1] - mse(w_ols):.2e}")
+    print(f"batch 8, {name:13s}: excess loss at the last step = {h[-1] - mse(w_ols):.2e},"
+          f"   mean excess over the last epoch = {h[-spe:].mean() - mse(w_ols):.2e}")
 
 fig, ax = plt.subplots(1, 2, figsize=(11, 4))
 ep = np.arange(1, len(hist_const) + 1) / spe
-for name, h in [("constant", hist_const), ("1/t decay", hist_inv), ("cosine decay", hist_cos)]:
-    ax[0].semilogy(ep, h - mse(w_ols), label=name, lw=1)
-ax[0].set_title("SGD (batch 8): the schedule shrinks the noise floor"); ax[0].set_xlabel("epochs"); ax[0].set_ylabel("excess loss"); ax[0].legend()
+for i_run, (name, h) in enumerate([("constant", hist_const), ("1/t decay", hist_inv), ("cosine decay", hist_cos)]):
+    ax[0].semilogy(ep, h - mse(w_ols), color=f"C{i_run}", lw=0.5, alpha=0.3)
+    ax[0].semilogy(np.arange(1, epochs + 1), h.reshape(epochs, spe).mean(1) - mse(w_ols), "o-", color=f"C{i_run}",
+                   ms=3, lw=2, label=f"{name} (bold: per-epoch mean)")
+ax[0].set_title("SGD (batch 8): the schedule shrinks the noise floor"); ax[0].set_xlabel("epochs"); ax[0].set_ylabel("excess loss"); ax[0].legend(fontsize=8)
 
 # noise-ball check on L(theta) = lambda/2 theta^2 with gradient noise of variance sigma^2
 lam, sigma = 1.0, 1.0
@@ -418,8 +577,9 @@ plt.tight_layout(); plt.show()
 
 nb.md(r"""
 Notice that the noise-ball formula is exact (the dots sit on the solid curve), and that cosine decay
-brings batch-8 SGD to within $10^{-5}$ of the optimum — three orders of magnitude better than the
-constant step — using exactly the same gradients. Large-model training recipes (warm-up, then cosine
+brings batch-8 SGD to below $10^{-4}$ of the optimum (a last-epoch mean of $7.7\times10^{-5}$, against
+$5.1\times10^{-4}$ for the $1/t$ decay and $5.2\times10^{-2}$ for the constant step — nearly three orders
+of magnitude better) using exactly the same gradients. Large-model training recipes (warm-up, then cosine
 decay to 10% of the peak) are this experiment at scale.
 
 **Try it yourself:** change the batch-8 constant step to `eta / 4`. The noise floor drops by about
@@ -493,7 +653,9 @@ for mth, path in paths.items():
     fvals = np.array([rosenbrock(p) for p in path])
     ax[1].semilogy(fvals, lw=1, label=mth)
     print(f"{mth:9s} eta = {settings[mth]:5g}: f after 500 steps = {fvals[500]:9.2e},  after 2000 = {fvals[-1]:9.2e},  final point = {path[-1]}")
-ax[0].plot(1, 1, "k*", ms=10); ax[0].set_title("Trajectories on the Rosenbrock valley"); ax[0].set_xlabel("x"); ax[0].set_ylabel("y"); ax[0].legend(fontsize=8)
+ax[0].plot(*x0, "k^", ms=8, label="start (-1.5, 1.5)"); ax[0].plot(1, 1, "k*", ms=10, label="minimum (1, 1)")
+ax[0].set_title("Trajectories on the Rosenbrock valley"); ax[0].set_xlabel("x"); ax[0].set_ylabel("y")
+ax[0].legend(fontsize=7, loc="upper right", ncol=2)          # the band y > 2 holds no trajectory
 ax[1].set_title("f along the trajectory"); ax[1].set_xlabel("step"); ax[1].set_ylabel("f(x, y)"); ax[1].legend(fontsize=8)
 plt.tight_layout(); plt.show()
 """)
@@ -507,14 +669,15 @@ regardless of the curvature; Adam with $\eta = 0.1$ is fast here, with $\eta = 0
 slowest of all — the learning rate still matters.
 
 **Try it yourself:** set `momentum` to `eta = 3e-3`. It diverges within a handful of steps — the
-stability limit of heavy ball is roughly $2(1+\beta)/L$, not much larger than GD's.
+stability limit of heavy ball is about $2(1+\beta)/L$, roughly twice GD's $2/L$. Momentum buys speed
+along the valley, not a much larger stable step.
 
 ### Bias correction, and why Adam's first steps have size ≈ η
 
 Adam's running averages start at zero, so for small $t$ the raw $m_t$ and $v_t$ are biased towards
 zero — but not by the same factor. Without correction the first step would be
 $\eta\,(1-\beta_1) g / \sqrt{(1-\beta_2) g^2} = \eta \cdot 0.1/\sqrt{0.001} \approx 3.16\,\eta$. With correction it is
-exactly $\eta\,\mathrm{sign}(g)$, whatever the magnitude of $g$.
+exactly $\eta\,\mathrm{sign}(g)$ (ignoring $\epsilon$), whatever the magnitude of $g$.
 """)
 
 nb.code(r"""
@@ -530,6 +693,113 @@ for t in range(40):
 plt.plot(range(1, 41), vs, "o-", ms=3); plt.axhline(10, color="gray", ls="--")
 plt.title("Heavy-ball velocity under a constant unit gradient (beta = 0.9) -> 1/(1-beta) = 10")
 plt.xlabel("step"); plt.ylabel("v_t"); plt.show()
+""")
+
+nb.md(r"""
+The printout covers only step 1. Below we follow $\lvert\text{step}\rvert/\eta$ for 3000 steps, with
+and without the bias correction, once for a constant gradient $g = 0.1$ and once for a noisy gradient
+whose mean is still $0.1$ but whose standard deviation is $0.3$.
+""")
+
+nb.code(r"""
+t_ad = np.arange(1, 3001)
+r_ad = np.random.default_rng(4)                          # local generator for the noisy gradient
+fig, ax = plt.subplots(1, 2, figsize=(11, 4))
+for i_ax, (label, gs) in enumerate([("constant gradient g = 0.1", np.full(len(t_ad), 0.1)),
+                                    ("noisy gradient 0.1 + N(0, 0.3^2)", 0.1 + 0.3 * r_ad.normal(size=len(t_ad)))]):
+    m_a = v_a = 0.0; raw, corr = [], []
+    for t_k, g_k in zip(t_ad, gs):
+        m_a = beta1 * m_a + (1 - beta1) * g_k; v_a = beta2 * v_a + (1 - beta2) * g_k * g_k
+        raw.append(abs(m_a) / np.sqrt(v_a))
+        corr.append(abs(m_a / (1 - beta1 ** t_k)) / np.sqrt(v_a / (1 - beta2 ** t_k)))
+    ax[i_ax].semilogx(t_ad, raw, label="without bias correction")
+    ax[i_ax].semilogx(t_ad, corr, label="with bias correction")
+    ax[i_ax].axhline(1, color="gray", ls="--", lw=0.8)
+    ax[i_ax].set_title(f"|Adam step| / eta, {label}", fontsize=10)
+    ax[i_ax].set_xlabel("step t (log scale)"); ax[i_ax].set_ylabel("|step| / eta"); ax[i_ax].legend(fontsize=8)
+    if i_ax == 0:
+        raw = np.array(raw)
+        print(f"constant gradient, no correction: step 1 = {raw[0]:.2f} eta, peak {raw.max():.2f} eta at t = {int(np.argmax(raw)) + 1},"
+              f" t = 100: {raw[99]:.2f} eta, t = 1000: {raw[999]:.2f} eta;  with correction: between {min(corr):.4f} and {max(corr):.4f} eta")
+    else:
+        print(f"noisy gradient, with correction: mean |step|/eta over the last 1000 steps = {np.mean(corr[-1000:]):.2f}"
+              f"   (|mean g| / rms(g) = {abs(gs.mean()) / np.sqrt(np.mean(gs ** 2)):.2f})")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** without bias correction the first step is $3.16\eta$ and the steps keep *growing*, to
+about $6.6\eta$ at $t = 12$, and are still $3.2\eta$ at $t = 100$ — an anti-warm-up exactly when the
+iterate is least trustworthy. With the correction the step is exactly $\eta$ for a consistent gradient.
+Under noise (right) even the corrected step is only about $\eta\,\lvert\text{mean } g\rvert/\text{rms}(g)
+\approx 0.3\eta$: Adam slows down by itself when the gradient direction is unreliable.
+
+### Why momentum helps: the rotated bowl again, with κ = 100
+
+The velocity plot above showed that under a *constant* gradient the heavy-ball velocity builds up to
+$g/(1-\beta)$. On the bowl of Section 3, made harder with eigenvalues $1$ and $100$, we now compare GD at
+its optimal step $2/(L+\mu)$, the default heavy ball ($\beta = 0.9$, $\eta = 1/L$) and the tuned heavy
+ball ($\beta = \big(\tfrac{\sqrt\kappa-1}{\sqrt\kappa+1}\big)^2 = (9/11)^2$, $\eta = \big(\tfrac{2}{\sqrt L+\sqrt\mu}\big)^2$),
+and look at the default heavy ball's velocity in the eigenbasis.
+""")
+
+nb.code(r"""
+A100 = Q @ np.diag([1.0, 100.0]) @ Q.T                    # same rotation as Section 3, kappa = 100
+mu_b, L_b = 1.0, 100.0
+th0 = Q @ np.array([8.0, 2.0]); steps_m = 120
+beta_t = ((np.sqrt(L_b) - np.sqrt(mu_b)) / (np.sqrt(L_b) + np.sqrt(mu_b))) ** 2
+eta_t = (2 / (np.sqrt(L_b) + np.sqrt(mu_b))) ** 2
+gd_p = optimise(lambda th: A100 @ th, th0, "gd", 2 / (L_b + mu_b), steps_m)
+hb_p = optimise(lambda th: A100 @ th, th0, "momentum", 1 / L_b, steps_m, beta=0.9)
+hbt_p = optimise(lambda th: A100 @ th, th0, "momentum", eta_t, steps_m, beta=beta_t)
+
+# the heavy ball's velocity v_t = beta v_(t-1) + g_t, recomputed from its path and rotated into the eigenbasis (flat, stiff)
+v_hb = np.zeros(2); v_eig, g_eig = [], []
+for th in hb_p[:-1]:
+    g_hb = A100 @ th; v_hb = 0.9 * v_hb + g_hb
+    v_eig.append(Q.T @ v_hb); g_eig.append(Q.T @ g_hb)
+v_eig, g_eig = np.array(v_eig), np.array(g_eig)
+for name, pth in [("GD, eta = 2/(L+mu)", gd_p), ("heavy ball, beta = 0.9", hb_p), (f"tuned heavy ball, beta = {beta_t:.3f}", hbt_p)]:
+    print(f"{name:32s}: ||theta_60|| = {np.linalg.norm(pth[60]):.2e},  ||theta_120|| = {np.linalg.norm(pth[120]):.2e}")
+print(f"flat component:  gradient never exceeds {np.abs(g_eig[:, 0]).max():.1f}, velocity peaks at {v_eig[:, 0].max():.1f} (step {int(np.argmax(v_eig[:, 0])) + 1})")
+print(f"stiff component: gradient peaks at {np.abs(g_eig[:, 1]).max():.0f}, velocity peaks at {np.abs(v_eig[:, 1]).max():.0f}")
+
+Gx, Gy = np.meshgrid(np.linspace(-9, 9, 181), np.linspace(-9, 9, 181))
+Zb = 0.5 * (A100[0, 0] * Gx ** 2 + 2 * A100[0, 1] * Gx * Gy + A100[1, 1] * Gy ** 2)
+fig, ax = plt.subplots(1, 3, figsize=(15, 4.2))
+ax[0].contour(Gx, Gy, Zb, levels=np.logspace(-1, 3.5, 14), cmap="viridis", alpha=0.6)
+ax[0].plot(gd_p[:61, 0], gd_p[:61, 1], "o-", ms=2, lw=1, label="GD, eta = 2/(L+mu)")
+ax[0].plot(hb_p[:61, 0], hb_p[:61, 1], "s-", ms=2, lw=1, label="heavy ball, beta = 0.9, eta = 1/L")
+ax[0].plot(*th0, "k^", ms=8, label="start"); ax[0].plot(0, 0, "k*", ms=10, label="minimum")
+ax[0].set_title("kappa = 100: first 60 steps"); ax[0].set_xlabel("theta_1"); ax[0].set_ylabel("theta_2")
+ax[0].legend(fontsize=7, loc="lower right"); ax[0].set_aspect("equal")
+k_m = np.arange(steps_m + 1)
+ax[1].semilogy(k_m, np.linalg.norm(gd_p, axis=1), label="GD: rate 0.980")
+ax[1].semilogy(k_m, np.linalg.norm(hb_p, axis=1), label="heavy ball beta 0.9: rate sqrt(beta) = 0.949")
+ax[1].semilogy(k_m, np.linalg.norm(hbt_p, axis=1), label=f"tuned heavy ball (beta {beta_t:.2f}): rate 0.818")
+ax[1].set_title("Distance to the minimum"); ax[1].set_xlabel("step"); ax[1].set_ylabel("||theta_k||"); ax[1].legend(fontsize=7)
+t_m = np.arange(1, 41)
+ax[2].plot(t_m, g_eig[:40, 0], "o-", ms=3, lw=1, color="tab:blue", label="gradient, flat component")
+ax[2].plot(t_m, v_eig[:40, 0], "s-", ms=3, lw=1.5, color="tab:orange", label="velocity, flat component")
+ax[2].plot(t_m, g_eig[:40, 1] / 10, "o:", ms=2, lw=1, color="tab:blue", label="gradient, stiff component / 10")
+ax[2].plot(t_m, v_eig[:40, 1] / 10, "s:", ms=2, lw=1, color="tab:orange", label="velocity, stiff component / 10")
+ax[2].axhline(0, color="gray", lw=0.8)
+ax[2].set_title("Heavy ball: flat pushes add up, stiff kicks do not"); ax[2].set_xlabel("step")
+ax[2].set_ylabel("component in the eigenbasis"); ax[2].legend(fontsize=7)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** after 60 steps GD has only reached $\lVert\theta\rVert = 2.5$, the default heavy ball
+($\beta = 0.9$, $\eta = 1/L$) $0.07$ and the tuned heavy ball $1.4\times10^{-3}$. In the middle panel GD
+falls along a straight line with slope $0.980$ per step; the default heavy ball oscillates under an
+envelope that shrinks by $\sqrt\beta = 0.949$ per step (step 60 happens to fall in one of its dips:
+between steps 50 and 70 it ranges from 0.04 to 0.48); and the tuned heavy ball falls at $0.818$ per step,
+times the slowly growing factor $k$ of its critically damped modes. The right panel shows why: along the flat direction successive gradients
+share a sign, so the velocity piles up to 44, more than five times the largest flat gradient (8.0); along the stiff
+direction the gradient keeps changing sign and the velocity never exceeds a single gradient (both
+peak at 200). Momentum is a large step along the valley and a small one across it — the $\sqrt\kappa$
+instead of $\kappa$ of the guide.
 """)
 
 nb.md(r"""
@@ -570,6 +840,14 @@ print(f"Hessian at w = 0 (standardised): L = {ev0[-1]:.3f}, mu = {ev0[0]:.2e}, k
 ev_raw = np.linalg.eigvalsh(0.25 * np.c_[np.ones(len(X_raw)), X_raw].T @ np.c_[np.ones(len(X_raw)), X_raw] / len(X_raw))
 print(f"Hessian at w = 0 (raw features) : L = {ev_raw[-1]:.3g},  2/L = {2 / ev_raw[-1]:.2e}   <- why unscaled GD seems 'broken'")
 
+# the optimum L(w*) itself, from 10 Newton steps (Section 6 explains why this converges so fast)
+w_opt = np.zeros(Xb.shape[1])
+for _ in range(10):
+    w_opt = w_opt - np.linalg.solve(log_hess(w_opt), log_grad(w_opt))
+L_star = log_loss(w_opt)
+ev_opt = np.linalg.eigvalsh(log_hess(w_opt))
+print(f"optimum: L(w*) = {L_star:.10f};  Hessian at w*: L = {ev_opt[-1]:.3f}, mu = {ev_opt[0]:.2e}, kappa = {ev_opt[-1] / ev_opt[0]:.3g}")
+
 lr_settings = {"gd": 0.5, "momentum": 0.3, "nesterov": 0.3, "rmsprop": 0.01, "adam": 0.05}
 w0 = np.zeros(Xb.shape[1])
 plt.figure(figsize=(8, 4))
@@ -577,18 +855,26 @@ for mth, eta in lr_settings.items():
     path = optimise(log_grad, w0, mth, eta, 300)
     losses = np.array([log_loss(w) for w in path])
     acc = np.mean((Xb @ path[-1] > 0) == (y_bc == 1))
-    print(f"{mth:9s} eta = {eta:5g}: loss at step 50 = {losses[50]:.4f}, 150 = {losses[150]:.4f}, 300 = {losses[300]:.5f};  train accuracy = {acc:.4f}")
-    plt.semilogy(losses - 0.0995913, lw=1, label=f"{mth} (eta={eta:g})")
+    print(f"{mth:9s} eta = {eta:5g}: loss at step 50 = {losses[50]:.4f}, 150 = {losses[150]:.4f};  excess at step 300 = {losses[300] - L_star:.1e};  train accuracy = {acc:.4f}")
+    plt.semilogy(np.maximum(losses - L_star, 1e-16), lw=1, label=f"{mth} (eta={eta:g})")
 plt.title("Logistic regression (breast cancer, standardised): excess loss above the optimum")
-plt.xlabel("step"); plt.ylabel("L(w) - L(w*)"); plt.legend(fontsize=8); plt.show()
+plt.xlabel("step"); plt.ylabel("L(w) - L(w*)  (floored at 1e-16)"); plt.legend(fontsize=8); plt.show()
 """)
 
 nb.md(r"""
-Notice that the condition number is still $\approx 330$ after standardisation — and it is set by
-the ridge term: without it $\mu \approx 3\times10^{-5}$ and $\kappa \approx 10^5$, because the 30
-features are strongly correlated. Plain GD at the largest safe step is slow in those flat
-directions. Momentum
-and Adam reach the same loss in a fraction of the steps. On the raw features the largest stable
+Notice that the condition number at $w = 0$ is still $\approx 330$ after standardisation — and it is
+set by the ridge term: without it $\mu \approx 3\times10^{-5}$ and $\kappa \approx 10^5$, because the 30
+features are strongly correlated. That $\kappa$ is measured at $w = 0$, where the logistic curvature
+$p(1-p) = 1/4$ is largest; at the optimum the Hessian is about 15 times flatter ($L = 0.22$,
+$\kappa \approx 23$), so $\eta = 0.5$, a step that is safe everywhere, is very conservative there and plain
+GD is slow (excess loss $3\times10^{-5}$ after 300 steps). Momentum and Nesterov converge linearly,
+reaching $2\times10^{-14}$ and $3\times10^{-16}$ at step 300 (Nesterov reaches the floating-point floor of
+about $10^{-17}$ some 20 steps later, momentum some 60–80 steps later), and Adam reaches $4\times10^{-9}$.
+RMSProp with $\rho = 0.9$ and a constant $\eta$ never settles: its $\sqrt{s}$ forgets within about ten
+steps, so $\sqrt{s} \approx \lvert g\rvert$ and the step $\eta\,g/\sqrt{s}$ stays $\approx\eta$ even as
+$g \to 0$, and it hovers about $10^{-4}$ above the optimum. Adam's $\beta_2 = 0.999$ remembers the larger
+early gradients, so its steps shrink as $g$ does (RMSProp with $\rho = 0.999$ does the same over these
+300 steps, but only until its memory of about 1000 steps runs out); a decaying schedule is the general cure. On the raw features the largest stable
 step would be $5\times10^{-6}$ — the usual experience of "GD does not work" on unscaled data.
 """)
 
@@ -622,8 +908,8 @@ gd_path = optimise(log_grad, np.zeros(Xb.shape[1]), "gd", 0.5, 300)
 gd_losses = np.array([log_loss(v) for v in gd_path])
 fig, ax = plt.subplots(1, 2, figsize=(11, 4))
 ax[0].semilogy(gd_losses - newton_losses[-1], label="GD, eta = 0.5")
-ax[0].semilogy(np.maximum(np.array(newton_losses) - newton_losses[-1], 1e-17), "o-", label="Newton")
-ax[0].set_title("Excess loss: Newton vs GD on logistic regression"); ax[0].set_xlabel("iteration"); ax[0].set_ylabel("L - L*"); ax[0].set_xlim(-1, 60); ax[0].legend()
+ax[0].semilogy(np.array(newton_losses[:-1]) - newton_losses[-1], "o-", label="Newton, iterations 0-7 (iteration 8 is L*)")
+ax[0].set_title("Excess loss: Newton vs GD on logistic regression"); ax[0].set_xlabel("iteration"); ax[0].set_ylabel("L - L*  (L* = Newton iteration 8)"); ax[0].set_xlim(-1, 60); ax[0].legend()
 ax[1].semilogy(grad_norms, "o-"); ax[1].set_title("Newton: ||grad|| per iteration (digits double)"); ax[1].set_xlabel("iteration"); ax[1].set_ylabel("||grad||")
 plt.tight_layout(); plt.show()
 
@@ -692,22 +978,27 @@ print(f"projected GD after 40 steps: {pgd_path[-1]}")
 
 G1, G2 = np.meshgrid(np.linspace(-1, 4, 301), np.linspace(-1, 4, 301))
 plt.figure(figsize=(6, 5.5))
-cs = plt.contour(G1, G2, G1 ** 2 + 2 * G2 ** 2, levels=[1, 3, 6, 10, 15, 22, 30], cmap="viridis")
+cs = plt.contour(G1, G2, G1 ** 2 + 2 * G2 ** 2, levels=[1, 3, 10, 15, 22, 30], cmap="viridis")
 plt.clabel(cs, fmt="%.0f", fontsize=7)
+plt.contour(G1, G2, G1 ** 2 + 2 * G2 ** 2, levels=[6], colors="k", linestyles="--", linewidths=1.5)
+plt.plot([], [], "k--", lw=1.5, label="level set f = 6 (tangent)")          # legend entry for the contour above
 xx = np.linspace(-1, 4, 50); plt.plot(xx, 3 - xx, "k-", lw=1.5, label="constraint x + y = 3")
-plt.plot(pgd_path[:, 0], pgd_path[:, 1], "o-", color="crimson", ms=3, lw=1, label="projected GD")
-plt.quiver(x_s, y_s, 2 * x_s, 4 * y_s, angles="xy", scale_units="xy", scale=4, color="tab:blue", label="grad f at x*")
-plt.quiver(x_s, y_s, 1, 1, angles="xy", scale_units="xy", scale=1, color="k", label="grad h")
-plt.plot(x_s, y_s, "r*", ms=12)
+plt.plot(pgd_path[:, 0], pgd_path[:, 1], "o", color="crimson", ms=5, lw=0, zorder=5, label="projected GD iterates")
+# grad f = (4, 4) drawn at half length, grad h = (1, 1) at full length on top: same direction, different lengths
+plt.quiver(x_s, y_s, 2 * x_s, 4 * y_s, angles="xy", scale_units="xy", scale=2, width=0.012, color="tab:blue",
+           label="grad f at x* = (4, 4), drawn at half length")
+plt.quiver(x_s, y_s, 1, 1, angles="xy", scale_units="xy", scale=1, width=0.006, color="k", zorder=4, label="grad h = (1, 1)")
+plt.plot(x_s, y_s, "r*", ms=12, zorder=6)
 plt.title("At the optimum the level set of f is tangent to the constraint"); plt.xlabel("x"); plt.ylabel("y")
-plt.legend(fontsize=8, loc="upper right"); plt.gca().set_aspect("equal"); plt.show()
+plt.legend(fontsize=8, loc="lower left"); plt.gca().set_aspect("equal"); plt.show()
 """)
 
 nb.md(r"""
-Notice that the level set $f = 6$ touches the constraint line at exactly one point, and the two
-gradient arrows there point the same way: $\nabla f = (4, 4) = 4\,\nabla h$, so $\lambda = -4$ in the
-convention $\nabla f + \lambda\nabla h = 0$. The shadow price checks out: relaxing the budget from 3 to
-3.01 raises the minimal cost by about $0.04 = -\lambda \times 0.01$. Projected GD finds the same point
+Notice that the dashed level set $f = 6$ touches the constraint line at exactly one point, and the two
+gradient arrows there point the same way (the blue one is drawn at half its length, so it is still twice
+as long as the black one): $\nabla f = (4, 4) = 4\,\nabla h$, so $\lambda = -4$ in the
+convention $\nabla f + \lambda\nabla h = 0$. The shadow price checks out: moving the constraint level
+from 3 to 3.01 raises the minimal cost by about $0.04 = -\lambda \times 0.01$. Projected GD finds the same point
 without ever forming the Lagrangian — the approach used when the constraint set is simple (a
 box, a sphere, the probability simplex).
 
@@ -734,7 +1025,7 @@ Four tools, one figure each.
 nb.code(r"""
 T, T_warm, eta_max = 1000, 100, 0.1
 t = np.arange(T + 1)
-step_decay = eta_max * 0.5 ** (t // 250)
+step_decay = eta_max * 0.5 ** np.minimum(t // 250, 3)       # four levels; t = T stays on the last one
 cosine = 0.5 * eta_max * (1 + np.cos(np.pi * t / T))
 warm_cos = np.where(t < T_warm, eta_max * t / T_warm, 0.5 * eta_max * (1 + np.cos(np.pi * np.clip(t - T_warm, 0, None) / (T - T_warm))))
 plt.plot(t, step_decay, label="step decay (halve every 250)"); plt.plot(t, cosine, label="cosine"); plt.plot(t, warm_cos, label="linear warm-up (100) + cosine")
@@ -752,14 +1043,18 @@ range_losses = np.array(range_losses)
 i_min = int(np.argmin(range_losses))
 knee = etas_test[i_min + int(np.argmax(range_losses[i_min:] > 2 * range_losses.min()))]
 print(f"range test: lowest loss at eta = {etas_test[i_min]:.3f}; loss has doubled by eta = {knee:.3f};  theory 2/L = {2 / L_lin:.3f};  a safe starting point is 1/L = {1 / L_lin:.3f}")
-plt.semilogx(etas_test, range_losses); plt.axvline(2 / L_lin, color="gray", ls="--", label="2/L")
+plt.loglog(etas_test, range_losses, label="loss after each step")
+plt.axvline(1 / L_lin, color="tab:green", ls="-.", label="1/L (suggested start)")
 plt.axvline(knee, color="crimson", ls=":", label="knee (loss doubled)")
-plt.ylim(0, 5); plt.title("Learning-rate range test: increase eta geometrically, watch the loss"); plt.xlabel("eta (increasing over the run)"); plt.ylabel("full loss after the step"); plt.legend(); plt.show()
+plt.axvline(2 / L_lin, color="gray", ls="--", label="2/L")
+plt.ylim(0.1, 100); plt.title("Learning-rate range test: increase eta geometrically, watch the loss")
+plt.xlabel("eta (increasing over the run, log scale)"); plt.ylabel("full loss after the step (log scale)"); plt.legend(fontsize=8); plt.show()
 """)
 
 nb.md(r"""
-Notice that the loss is flat and minimal over a wide band and shoots up close to $2/L$ — the range
-test *measures* the curvature constant $L$ you would otherwise have to guess. The mini-batch noise is
+Notice that the loss falls from its starting value, is flat and minimal over a wide band, and shoots
+up by orders of magnitude close to $2/L$ — the range test *measures* the curvature constant $L$ you would
+otherwise have to guess. The green line, $1/L$, sits inside the flat band, a safe distance below the knee. The mini-batch noise is
 what makes the knee visible: with full-batch GD on an already-converged iterate, an unstable step
 needs several iterations before the error in the stiff direction has grown enough to see, so the
 knee appears late. On a non-quadratic loss the knee is less sharp, but the recipe is the same:
@@ -787,11 +1082,59 @@ for eta in [0.5, 1.0]:
 """)
 
 nb.md(r"""
-Notice that clipping cannot make a step of $\eta = 0.5 > 2/L$ *converge* — the stability limit is a
-property of the step size, and the clipped iterate circles at a radius where $\eta\lVert g\rVert = \eta c$
-balances the curvature — but it does turn an explosion into a bounded orbit, which is exactly what
-you want when a single bad mini-batch would otherwise destroy a week of training. Clipping handles
-spikes; the learning rate handles curvature.
+Four printed lines do not show *where* the clipped iterate goes. We draw the run with $\eta = 0.5$
+and $c = 2$ next to the unclipped one, and follow both eigen-coordinates (flat, stiff) of the clipped
+runs for $\eta = 0.5$ and $\eta = 1$.
+""")
+
+nb.code(r"""
+def run_clipped(eta, c, steps):
+    th = Q @ np.array([8.0, 2.0]); path_c = [th]
+    for _ in range(steps):
+        gq = A @ th
+        th = th - eta * (gq if c is None else clip_by_global_norm(gq, c)); path_c.append(th)
+        if np.linalg.norm(th) > 1e3:                    # unclipped runs: stop once they have clearly left
+            break
+    return np.array(path_c)
+
+pc, pn = run_clipped(0.5, 2.0, 40), run_clipped(0.5, None, 40)
+print("unclipped, eta = 0.5: ||theta_k|| for k = 0..5 =", np.round(np.linalg.norm(pn[:6], axis=1), 1))
+for eta in [0.5, 1.0]:
+    z = run_clipped(eta, 2.0, 200) @ Q                  # rows are (flat, stiff) eigen-coordinates
+    print(f"clipped, eta = {eta}: flat coordinate -> {z[-1, 0]:+.1e};  stiff coordinate bounces between "
+          f"{z[-2, 1]:+.3f} and {z[-1, 1]:+.3f}, a jump of {abs(z[-1, 1] - z[-2, 1]):.3f} = eta * c")
+
+Gx, Gy = np.meshgrid(np.linspace(-9, 9, 181), np.linspace(-9, 9, 181))
+Zq = 0.5 * (A[0, 0] * Gx ** 2 + 2 * A[0, 1] * Gx * Gy + A[1, 1] * Gy ** 2)
+fig, ax = plt.subplots(1, 2, figsize=(11, 4.4))
+ax[0].contour(Gx, Gy, Zq, levels=np.logspace(-1, 2.6, 14), cmap="viridis", alpha=0.6)
+ax[0].plot(pn[:4, 0], pn[:4, 1], "x--", color="gray", lw=1, label="no clipping (leaves the plot)")
+ax[0].plot(pc[:, 0], pc[:, 1], "o-", color="crimson", ms=3, lw=1, label="clipped at c = 2 (40 steps)")
+ax[0].plot(*pc[0], "k^", ms=8, label="start"); ax[0].plot(0, 0, "k*", ms=10, label="minimum")
+ax[0].set_xlim(-9, 9); ax[0].set_ylim(-9, 9); ax[0].set_aspect("equal")
+ax[0].set_title("eta = 0.5 > 2/L: clipping turns divergence into a bounce", fontsize=10)
+ax[0].set_xlabel("theta_1"); ax[0].set_ylabel("theta_2"); ax[0].legend(fontsize=7, loc="upper left")
+for eta, ls in [(0.5, "-"), (1.0, "--")]:
+    z = run_clipped(eta, 2.0, 60) @ Q
+    ax[1].plot(z[:, 0], ls, color="tab:blue", lw=1, label=f"flat coordinate, eta = {eta}")
+    ax[1].plot(z[:, 1], ls, color="tab:orange", marker=".", ms=3, lw=1, label=f"stiff coordinate, eta = {eta}")
+ax[1].axhline(0, color="gray", lw=0.8)
+ax[1].set_title("Clipped GD in the eigenbasis: a 2-cycle across the valley", fontsize=10)
+ax[1].set_xlabel("step"); ax[1].set_ylabel("coordinate"); ax[1].legend(fontsize=7)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** clipping caps the instability rather than removing it. While $\lVert g\rVert > c$ every
+step has length exactly $\eta c = 1$, so the iterate walks steadily down the valley; near the minimum
+the stiff coordinate still wants to grow by $\lvert 1 - 0.5\cdot10\rvert = 4$ per step, is clipped back,
+and ends in a two-step bounce between $-0.54$ and $+0.46$ (between $+0.88$ and $-1.12$ for $\eta = 1$),
+a jump of exactly $\eta c$, while the flat coordinate converges. The printed $\lVert\theta_{200}\rVert$
+values above are just one end of each bounce. Without clipping the same run passes
+$\lVert\theta\rVert = 2000$ after five steps. Turning an explosion into a bounded bounce is exactly what
+you want when a single bad mini-batch would otherwise destroy a week of training — but clipping cannot
+make a step $\eta > 2/L$ converge.
+Clipping handles spikes; the learning rate handles curvature.
 """)
 
 nb.code(r"""
@@ -837,7 +1180,8 @@ nb.md(r"""
 * Mini-batch gradients are unbiased with variance $\propto 1/b$; a constant step leaves a noise
   ball of variance $\approx \eta\sigma^2/(2\lambda)$, which schedules shrink.
 * Momentum accumulates along-valley velocity ($\sqrt\kappa$ instead of $\kappa$); RMSProp and Adam give
-  each parameter its own step; Adam's bias correction makes its early steps exactly $\approx\eta$.
+  each parameter its own step; Adam's bias correction makes its first step $\eta\,\mathrm{sign}(g)$ (up to $\epsilon$)
+  and keeps the early steps $\approx\eta$.
 * Newton's method squares the error each iteration but costs $O(d^3)$; L-BFGS is the practical
   version, and it is what `LogisticRegression` runs.
 * At a constrained optimum the level set is tangent to the constraint: $\nabla f + \lambda\nabla h = 0$;
@@ -951,8 +1295,8 @@ In the eigenbasis of $A$ every coordinate is multiplied by $(1 - \eta\lambda_i)$
 converges from every start iff $\lvert 1 - \eta\lambda_i\rvert < 1$ for all $i$, i.e. $\eta < 2/\lambda_{\max}$.
 The worst-case factor $\max(\lvert 1-\eta\mu\rvert, \lvert 1-\eta L\rvert)$ is smallest when the two are
 equal, giving $\eta^\star = 2/(L+\mu)$ and a rate of $(\kappa-1)/(\kappa+1)$. For the test matrix
-$L = 2 + \sqrt3 \approx 4.73$, $\mu = 2 - \sqrt3 \approx 0.27$, so $\eta_{\max} \approx 0.42$ and
-$\eta^\star = 1/3$. A common slip is to use the largest *diagonal entry* instead of the largest
+the eigenvalues are $3 - \sqrt3 \approx 1.27$, $3$ and $3 + \sqrt3 \approx 4.73$, so $L = 3 + \sqrt3$,
+$\mu = 3 - \sqrt3$, $\eta_{\max} = 2/(3 + \sqrt3) \approx 0.42$ and $\eta^\star = 2/6 = 1/3$. A common slip is to use the largest *diagonal entry* instead of the largest
 eigenvalue — for a non-diagonal matrix that overestimates the safe step.
 """,
 )
@@ -1179,9 +1523,10 @@ check_close('with batch_size = n it is gradient descent and converges to OLS', w
 Each mini-batch gradient is an unbiased estimate of the full gradient, so SGD follows the right
 direction on average while costing only $b$ rows per step; one epoch here is 20 steps instead of one.
 With $b = n$ the loop degenerates to full-batch GD and converges to the least-squares solution.
-The exact-match check works because the protocol pins down the random permutation; if yours
-differs by a hair, you probably sampled with replacement, used $1/b$ instead of $2/b$ in the
-gradient, or kept the remainder batch.
+The exact-match check works because the protocol pins down the random permutation. If yours does
+not match, you probably sampled with replacement, drew a new permutation per step instead of per
+epoch, or used $1/b$ instead of $2/b$ in the gradient (with other sizes, keeping the remainder batch
+also breaks the match; here $500/25 = 20$ leaves none).
 """,
 )
 
@@ -1257,7 +1602,7 @@ check_close('... and land near the exact minimiser A^-1 b = (1.5, -3.5)', got, n
     explanation_md=r"""
 The two running averages start at zero and are therefore biased towards zero early on — by the
 factor $(1-\beta_1^t)$ for $m$ and $(1-\beta_2^t)$ for $v$. Dividing them out makes the very first
-step equal to $\eta\,\mathrm{sign}(g)$ exactly, which is why Adam is insensitive to the overall scale
+step equal to $\eta\,\mathrm{sign}(g)$ (up to $\epsilon$), which is why Adam is insensitive to the overall scale
 of the gradient (and why its learning rate is typically 10–100 times smaller than SGD's). Typical
 mistakes: forgetting the bias correction (first step $\approx 3.16\eta$), applying `np.sqrt` to the
 raw $v$ instead of $\hat v$, or using $t$ starting at 0 (division by zero in the correction).
@@ -1677,6 +2022,8 @@ large step along the valley and a small step across it — something no single s
 (iii) GD with its best constant step contracts by $(\kappa-1)/(\kappa+1) = 0.980$ per step, so
 $10^{6}$ needs about $\ln(10^{6})/\ln(1/0.98) \approx 690$ steps. Tuned heavy ball contracts by
 $(\sqrt\kappa-1)/(\sqrt\kappa+1) = 0.818$ and needs about $70$ — roughly a factor $\sqrt\kappa$ fewer.
+(The count you measure in Exercise 9 comes out somewhat higher: with the tuned $\beta$ the extreme modes
+are critically damped, which adds a factor $k$ to $0.818^k$; the speed-up is still of order $\sqrt\kappa$, only a constant factor smaller.)
 """,
 )
 
@@ -1747,8 +2094,11 @@ the order $10^3$ and plain GD needs a tiny step ($\eta \lesssim 2/L$) that leave
 almost untouched after 500 steps; momentum helps by about $\sqrt\kappa$; Adam's per-coordinate
 scaling makes it nearly indifferent to the feature scales, but it still diverges or stalls if $\eta$
 is far off. After standardising, $L$ drops by orders of magnitude, GD and momentum can use a step
-around $1/L$ (here several units) and all three methods converge in a few hundred steps; the optimum itself
-shifts slightly because the ridge penalty is not invariant to rescaling the features. Recommendation:
+around $1/L$ (here several units) and all three methods converge in a few hundred steps. The two optima
+differ noticeably (penalised loss about $0.098$ raw versus $0.131$ standardised): standardising divides
+feature $j$ by $\sigma_j$, so its weight is multiplied by $\sigma_j$ and the ridge penalty on it by
+$\sigma_j^2$ (up to $\approx 1000\times$ here) — the standardised problem is much more strongly regularised.
+Compare the two set-ups by accuracy or by the unpenalised loss, not by the penalised objective. Recommendation:
 standardise, run a quick learning-rate sweep, use momentum or Adam with the largest stable step,
 and validate on held-out data.
 """,
@@ -1784,8 +2134,8 @@ def train(Xb, y, method, eta, steps=500, beta=0.9, beta1=0.9, beta2=0.999, eps=1
             w = w - eta * (m / (1 - beta1 ** t)) / (np.sqrt(v / (1 - beta2 ** t)) + eps)
     return w, np.array(hist)
 
-grids = {"gd": [1e-3, 1e-2, 3e-2, 1e-1], "momentum": [3e-4, 3e-3, 1e-2, 1e-1], "adam": [3e-3, 3e-2, 1e-1, 1.0]}
-grids_std = {"gd": [0.3, 1.0, 3.0, 30.0], "momentum": [0.1, 0.3, 1.0, 30.0], "adam": [3e-3, 3e-2, 1e-1, 1.0]}
+grids = {"gd": [1e-3, 1e-2, 3e-2, 1e-1], "momentum": [3e-4, 3e-3, 1e-2, 1e-1, 3e-1], "adam": [3e-3, 3e-2, 1e-1, 1.0]}
+grids_std = {"gd": [0.3, 1.0, 3.0, 30.0], "momentum": [0.1, 0.3, 1.0, 100.0], "adam": [3e-3, 3e-2, 1e-1, 3.0]}
 for title, Xf, grid in [("raw features", X, grids), ("standardised features", (X - X.mean(0)) / X.std(0), grids_std)]:
     Xb = np.c_[np.ones(len(Xf)), Xf]
     H0 = 0.25 * Xb.T @ Xb / len(y); ev = np.linalg.eigvalsh(H0)
@@ -1795,20 +2145,23 @@ for title, Xf, grid in [("raw features", X, grids), ("standardised features", (X
         best = None
         for eta in grid[method]:
             w, hist = train(Xb, y, method, eta)
-            unstable = len(hist) < 500 or not np.isfinite(hist[-1]) or hist[-1] > hist[0] or (hist[-50:].max() - hist[-50:].min()) > 0.1
+            # unstable = diverged, ended above the start, or still oscillating: the loss rose in more than 5 of the last 50 steps
+            unstable = len(hist) < 500 or not np.isfinite(hist[-1]) or hist[-1] > hist[0] or np.sum(np.diff(hist[-50:]) > 1e-9) > 5
             ax.semilogy(hist, lw=1, label=f"eta={eta:g}" + ("  (unstable)" if unstable else ""))
             if not unstable and (best is None or hist[-1] < best[1]):
-                best = (eta, hist[-1], np.mean((Xb @ w > 0) == (y == 1)))
+                z = Xb @ w
+                best = (eta, hist[-1], np.mean((z > 0) == (y == 1)), np.mean(y * np.logaddexp(0, -z) + (1 - y) * np.logaddexp(0, z)))
         ax.set_title(f"{method} ({title})"); ax.set_xlabel("step"); ax.legend(fontsize=7)
         if best:
-            print(f"  {method:9s}: best eta = {best[0]:g}, final loss = {best[1]:.4f}, training accuracy = {best[2]:.3f}")
+            print(f"  {method:9s}: best eta = {best[0]:g}, final loss = {best[1]:.4f} (unpenalised {best[3]:.4f}), training accuracy = {best[2]:.3f}")
     axes[0].set_ylabel("training loss"); plt.tight_layout(); plt.show()
-print("\nDiscussion: on raw features the Hessian's condition number is in the thousands, so plain GD must use a tiny step and")
+print("\nDiscussion: on raw features the Hessian's condition number is about a thousand, so plain GD must use a tiny step and")
 print("barely moves in the flat directions; momentum improves by roughly sqrt(kappa); Adam is nearly indifferent to the scales")
 print("but has its own learning-rate window. Standardising removes most of the conditioning problem and lets all three methods")
-print("converge in a few hundred steps. (The two optima differ slightly because the ridge penalty is not scale-invariant: standardising")
-print("rescales the weights and hence the penalty.) Recommendation: standardise, sweep the learning rate, prefer momentum/Adam,")
-print("and validate on held-out data -- the training accuracy reported above is optimistic.")
+print("converge in a few hundred steps. The two optima differ noticeably (penalised loss ~0.098 raw vs ~0.131 standardised) because")
+print("the ridge penalty is not scale-invariant: standardising multiplies the penalty on feature j by its variance (up to ~1000x here),")
+print("so compare the set-ups by accuracy or unpenalised loss, not by the penalised objective. Recommendation: standardise, sweep the")
+print("learning rate, prefer momentum/Adam, and validate on held-out data -- the training accuracy reported above is optimistic.")
 """,
 )
 

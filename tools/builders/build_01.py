@@ -70,10 +70,12 @@ print("change 2024 -> 2025:", p_2025 - p_2024, "  (BP up, cholesterol down)")
 
 # draw u, v, u + v and 2u as arrows from the origin; the faint arrow shows v placed tip-to-tail after u
 fig, ax = plt.subplots(figsize=(5.5, 5.5))
-for vec, col, lab in [(2 * u, "C3", "2u"), (v, "C1", "v"), (u + v, "C2", "u + v"), (u, "C0", "u")]:   # u drawn last, on top of 2u
+for vec, col, lab, off in [(2 * u, "C3", "2u", (6, 4)), (v, "C1", "v", (6, 4)), (u + v, "C2", "u + v", (6, 4)),
+                           (u, "C0", "u", (-16, 4))]:   # u drawn last, on top of 2u; its label sits to the left of the shaft
     ax.quiver(0, 0, vec[0], vec[1], angles="xy", scale_units="xy", scale=1, color=col, width=0.012)
-    ax.annotate(lab, vec, textcoords="offset points", xytext=(6, 4), color=col, fontsize=11)
+    ax.annotate(lab, vec, textcoords="offset points", xytext=off, color=col, fontsize=11)
 ax.quiver(u[0], u[1], v[0], v[1], angles="xy", scale_units="xy", scale=1, color="C1", alpha=0.35, width=0.008)
+ax.annotate("v, placed after u", u + v / 2, textcoords="offset points", xytext=(4, 6), color="C1", alpha=0.7, fontsize=9)
 ax.set_xlim(-1, 5); ax.set_ylim(-2, 5); ax.set_aspect("equal"); ax.grid(alpha=0.3)
 ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$"); ax.set_title("Vector addition and scaling in the plane")
 plt.show()
@@ -82,7 +84,7 @@ plt.show()
 nb.md(r"""
 **Notice that** $\mathbf{u} + \mathbf{v}$ is where you land if you walk along $\mathbf{u}$ and then along $\mathbf{v}$ (the faint arrow): tip-to-tail addition and component-wise addition are the same thing. Scaling by 2 keeps the direction and doubles the length.
 
-**Linear independence.** Vectors are independent when no non-trivial combination gives $\mathbf{0}$ — equivalently, when the matrix with those vectors as columns has full rank. Writing a third vector $\mathbf{w}$ in terms of $\mathbf{u}$ and $\mathbf{v}$ means solving two equations in two unknowns. The guide did this by hand for $\mathbf{w} = (5, 0)$ and found $5/7$ and $10/7$.
+**Linear independence.** Vectors are independent when no non-trivial combination gives $\mathbf{0}$ — equivalently, when the matrix with those vectors as columns has rank equal to the number of vectors. Writing a third vector $\mathbf{w}$ in terms of $\mathbf{u}$ and $\mathbf{v}$ means solving two equations in two unknowns. The guide did this by hand for $\mathbf{w} = (5, 0)$ and found $5/7$ and $10/7$.
 """)
 
 nb.code(r"""
@@ -201,6 +203,40 @@ print("u =", u, " perp =", perp, " u . perp =", u @ perp)
 nb.md(r"""
 **Notice that** the identity holds to floating-point precision ($\sim 10^{-14}$) for every pair, and that the Cauchy–Schwarz ratio never reaches 1 for random vectors — it only equals 1 when one vector is a multiple of the other.
 
+To *see* the two readings of the dot product agree, fix both lengths at 5 and let the angle $\theta$ between $\mathbf{u} = (3, 4)$ and a second vector grow from $0^\circ$ (parallel) to $180^\circ$ (anti-parallel). The weighted sum of components, computed from the coordinates alone, must then follow $\|\mathbf{u}\|\|\mathbf{v}\|\cos\theta = 25\cos\theta$. The worked example's $\mathbf{v} = (4, 3)$, the perpendicular $(-4, 3)$ and $-\mathbf{u}$ are three points on that curve.
+""")
+
+nb.code(r"""
+u, v = np.array([3., 4.]), np.array([4., 3.])                 # the worked example again
+perp = np.array([-4., 3.])
+theta_deg = np.linspace(0, 180, 361)                          # angle between u and the swept vector
+phi = np.arctan2(u[1], u[0])                                  # direction of u in the plane
+swept = 5 * np.column_stack([np.cos(phi + np.radians(theta_deg)), np.sin(phi + np.radians(theta_deg))])   # length-5 vectors
+dot_sweep = swept @ u                                         # one weighted sum per angle, all at once
+print("largest |u . v - 25 cos(theta)| along the sweep: %.1e" % np.max(np.abs(dot_sweep - 25 * np.cos(np.radians(theta_deg)))))
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+ring = np.linspace(0, 2 * np.pi, 200)
+ax1.plot(5 * np.cos(ring), 5 * np.sin(ring), "k:", lw=1)                             # every vector of length 5 ends on this circle
+ax2.plot(theta_deg, dot_sweep, color="0.3", lw=2, label="u . v = 5 * 5 * cos(theta)")
+ax2.axhline(0, color="k", lw=0.8)
+marked = [(u, "C0", "u = (3, 4)", 0.0), (v, "C1", "v = (4, 3)", np.degrees(np.arccos(u @ v / 25))),
+          (perp, "C2", "(-4, 3)  perpendicular", 90.0), (-u, "C3", "-u  anti-parallel", 180.0)]
+for vec, col, lab, ang in marked:
+    ax1.quiver(0, 0, vec[0], vec[1], angles="xy", scale_units="xy", scale=1, color=col, width=0.012, label=lab)
+    ax2.plot(ang, u @ vec, "o", color=col, ms=8, label="%s:  %.1f degrees,  u . v = %.0f" % (lab.split("  ")[0], ang, u @ vec))
+ax1.set_xlim(-5.5, 5.5); ax1.set_ylim(-5.5, 5.5); ax1.set_aspect("equal"); ax1.grid(alpha=0.3)
+ax1.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=2)      # below the axes: nothing is hidden
+ax1.set_xlabel("$x_1$"); ax1.set_ylabel("$x_2$"); ax1.set_title("Vectors of length 5 at different angles to u")
+ax2.set_xticks(range(0, 181, 30)); ax2.grid(alpha=0.3); ax2.legend(fontsize=8, loc="upper right")
+ax2.set_xlabel("angle theta between u and the second vector (degrees)"); ax2.set_ylabel("dot product  u . v")
+ax2.set_title("Dot product as a function of the angle")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** for two vectors of length 5 the dot product is exactly the curve $25\cos\theta$: it is 25 for $\mathbf{u}$ itself, 24 at the worked example's $16.3^\circ$, crosses zero at $90^\circ$ — the perpendicular $(-4, 3)$ — and bottoms out at $-25$ for $-\mathbf{u}$. The curve was computed from coordinates alone (a weighted sum) and follows the alignment formula to rounding error: the two readings are one quantity.
+
 The *weighted-sum* reading is what a linear model computes: features $\mathbf{x}$, weights $\mathbf{w}$, prediction $\mathbf{w}\cdot\mathbf{x} + b$. The *alignment* reading says the same number is large when the feature vector points along $\mathbf{w}$. And a whole dataset is scored with one matrix–vector product `X @ w`: one dot product per row.
 """)
 
@@ -254,7 +290,8 @@ def normalize_rows(M):
 cos_scores = normalize_rows(D) @ (query / np.linalg.norm(query))    # all eight cosines at once
 euc_dists  = np.linalg.norm(D - query, axis=1)
 
-order_cos, order_euc = np.argsort(-cos_scores), np.argsort(euc_dists)
+order_cos = np.argsort(-cos_scores, kind="stable")                  # best first; exact ties (cosine 0, equal distances) keep list order
+order_euc = np.argsort(euc_dists, kind="stable")
 print(f"{'rank':<6}{'by cosine similarity':<26}{'cos':>6}      {'by Euclidean distance':<26}{'dist':>6}")
 print("-" * 80)
 for r in range(len(names)):
@@ -265,6 +302,34 @@ print("\nnorm of each document vector:", np.linalg.norm(D, axis=1))
 
 nb.md(r"""
 **Notice that** cosine ranks the long ML article at the top — it is the most "about" the query — while Euclidean distance pushes it far down the list, below *Sports analytics* and *ML for trading*, purely because its vector is long ($\|\mathbf{d}\| \approx 10$ versus $\approx 2.4$ for the short note). Euclidean distance mixes "different topic" with "different length"; cosine measures topic only.
+
+The slope chart below follows every document from its cosine rank to its Euclidean rank and colours it by its length.
+""")
+
+nb.code(r"""
+from matplotlib.colors import ListedColormap
+
+rank_cos = np.empty(len(names), dtype=int); rank_cos[order_cos] = np.arange(1, len(names) + 1)     # rank 1 = best match
+rank_euc = np.empty(len(names), dtype=int); rank_euc[order_euc] = np.arange(1, len(names) + 1)
+doc_len = np.linalg.norm(D, axis=1)
+cmap = ListedColormap(plt.get_cmap("plasma")(np.linspace(0, 0.8, 256)))                            # plasma without its pale yellow end
+len_norm = plt.Normalize(doc_len.min(), doc_len.max())
+
+fig, ax = plt.subplots(figsize=(8.5, 5.5))
+for i, name in enumerate(names):
+    ax.plot([0, 1], [rank_cos[i], rank_euc[i]], "o-", lw=2, ms=6, color=cmap(len_norm(doc_len[i])))
+    ax.text(-0.04, rank_cos[i], name, ha="right", va="center", fontsize=8)
+    ax.text(1.04, rank_euc[i], "%s  (|d| = %.1f)" % (name, doc_len[i]), ha="left", va="center", fontsize=8)
+ax.set_xlim(-1.35, 2.5); ax.set_ylim(8.5, 0.5); ax.set_yticks(range(1, 9))
+ax.set_xticks([0, 1]); ax.set_xticklabels(["cosine", "Euclidean"]); ax.grid(alpha=0.3, axis="y")
+plt.colorbar(plt.cm.ScalarMappable(norm=len_norm, cmap=cmap), ax=ax, label="document length  ||d||")
+ax.set_xlabel("ranked by"); ax.set_ylabel("rank (1 = best match)")
+ax.set_title('Rank of each document for the query "model data loss"')
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the line that plunges is the long ML article (orange, $\|\mathbf{d}\| = 10$): it falls from first place to seventh although it is the most relevant document. The other long document, the football feature (also orange, $\|\mathbf{d}\| \approx 10.1$), shares no word with the query and sits at seventh and eighth place under the two rankings. The two shortest documents ($\|\mathbf{d}\| \approx 2.4$ and $3.2$) take the top two Euclidean places. Euclidean distance ranks partly by length; cosine ranks by direction alone. (The three documents with cosine 0 share no word with the query, so their order at ranks 6–8 is arbitrary.)
 
 The full pairwise picture is the matrix $\hat{D}\hat{D}^\top$ of all document–document cosines.
 """)
@@ -284,7 +349,7 @@ plt.colorbar(im, ax=ax, label="cosine similarity")
 ax.set_title("Pairwise cosine similarity of the eight documents"); ax.set_xlabel("document"); ax.set_ylabel("document")
 plt.tight_layout(); plt.show()
 
-print("ML note vs ML article: cos = %.3f  (same topic, 4x the length)" % S[0, 1])
+print("ML note vs ML article: cos = %.3f  (same topic, about 4x the length; below 1 only because the article also mentions 'loss')" % S[0, 1])
 print("ML note vs Football report: cos = %.3f  (no shared words)" % S[0, 2])
 """)
 
@@ -325,12 +390,14 @@ errs = [np.sum((a - t * b) ** 2) for t in ts]
 ax2.plot(ts, errs)
 ax2.axvline(t_star, color="C2", ls="--", label="t* = a.b / b.b = %.2f" % t_star)
 ax2.set_xlabel("t"); ax2.set_ylabel("squared error  ||a - t b||^2"); ax2.set_title("Squared error is a parabola in t")
+ax2.axhline(r @ r, color="C3", ls=":", label="minimum = ||r||^2 = %.1f" % (r @ r))
+ax2.plot(t_star, r @ r, "o", color="C2")
 ax2.legend(); ax2.grid(alpha=0.3)
 plt.show()
 """)
 
 nb.md(r"""
-**Notice that** the residual arrow meets the dotted line at a right angle — $\mathbf{r}\cdot\mathbf{b}$ is zero to machine precision — and that the parabola's minimum is exactly at $t^\star$. Replace the single direction $\mathbf{b}$ by several feature columns and the same picture becomes *least squares*: the fitted values are the projection of the target onto the span of the columns, and the residual vector is orthogonal to every column (Module 02).
+**Notice that** the residual arrow meets the dotted line at a right angle — $\mathbf{r}\cdot\mathbf{b}$ is zero to machine precision — and that the parabola's minimum is exactly at $t^\star$, where the squared error equals $\|\mathbf{r}\|^2 = 3.2$ (the dotted red level): no multiple of $\mathbf{b}$ gets closer to $\mathbf{a}$ than the projection does. Replace the single direction $\mathbf{b}$ by several feature columns and the same picture becomes *least squares*: the fitted values are the projection of the target onto the span of the columns, and the residual vector is orthogonal to every column (Module 02).
 """)
 
 # ---------------------------------------------------------------- Section 6
@@ -373,7 +440,56 @@ print("reconstruction Q c =", Q @ c, "   Parseval: sum c_i^2 = %.3f, ||x||^2 = %
 """)
 
 nb.md(r"""
-**Notice that** the third coordinate of $\mathbf{x}$ is zero: $\mathbf{x}$ lies in the plane spanned by $\mathbf{a}_1$ and $\mathbf{a}_2$ (indeed $\mathbf{x} = \mathbf{a}_1 + 2\mathbf{a}_2$), and the orthonormal basis makes that visible at a glance. The same idea organises colour: a pixel's $(R, G, B)$ values re-expressed in a brightness/chroma basis put almost all of their energy into the brightness coordinate — which is why image codecs compress chroma far more aggressively than luma.
+**Notice that** the third coordinate of $\mathbf{x}$ is zero: $\mathbf{x}$ lies in the plane spanned by $\mathbf{a}_1$ and $\mathbf{a}_2$ (indeed $\mathbf{x} = \mathbf{a}_1 + 2\mathbf{a}_2$), and the orthonormal basis makes that visible at a glance.
+
+The algorithm is easiest to *see* in the plane. Take $\mathbf{a}_1 = (4, 1)$ and $\mathbf{a}_2 = (2, 3)$. The first step keeps the direction of $\mathbf{a}_1$ and shrinks it to length 1, giving $\mathbf{q}_1$. The second subtracts from $\mathbf{a}_2$ its projection onto $\mathbf{q}_1$ — Section 5 again — and rescales what is left to length 1, giving $\mathbf{q}_2$. Then we read off the coordinates of $\mathbf{x} = (3, 2)$ in the new basis.
+""")
+
+nb.code(r"""
+a1, a2 = np.array([4., 1.]), np.array([2., 3.])
+q1 = a1 / np.linalg.norm(a1)                              # step 1: keep the direction of a1, make it a unit vector
+proj = (a2 @ q1) * q1                                     # step 2: the part of a2 along q1 (Section 5) ...
+v2 = a2 - proj                                            # ... removed, leaving the residual ...
+q2 = v2 / np.linalg.norm(v2)                              # ... which is then normalised
+print("q1 =", q1, "  q2 =", q2, "  q1 . q2 = %.1e" % (q1 @ q2))
+print("same columns as gram_schmidt() above:", np.allclose(gram_schmidt(np.column_stack([a1, a2])), np.column_stack([q1, q2])))
+
+x2 = np.array([3., 2.])
+c2 = np.array([x2 @ q1, x2 @ q2])                         # coordinates of x2 in the new basis: two dot products
+print("coordinates of x = (3, 2): (%.3f, %.3f)   sum of squares = %.3f,  ||x||^2 = %.3f" % (c2[0], c2[1], c2 @ c2, x2 @ x2))
+
+def arrow(ax, vec, start=(0, 0), width=0.012, **kw):
+    ax.quiver(start[0], start[1], vec[0], vec[1], angles="xy", scale_units="xy", scale=1, width=width, **kw)
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.8))
+arrow(ax1, a2, color="C0", label="a2 = (2, 3)")
+arrow(ax1, a1, color="C1", label="a1 = (4, 1)")
+arrow(ax1, proj, color="C2", label="projection of a2 onto a1")
+arrow(ax1, v2, start=proj, color="C3", label="v2 = a2 - projection")
+ax1.plot([-1, 5], [-0.25, 1.25], "k:", lw=1)              # the line through a1
+ax1.set_xlim(-1, 5); ax1.set_ylim(-1, 4); ax1.set_aspect("equal"); ax1.grid(alpha=0.3); ax1.legend(fontsize=8, loc="upper left")
+ax1.set_xlabel("$x_1$"); ax1.set_ylabel("$x_2$"); ax1.set_title("Subtract the part of a2 that lies along a1")
+
+ring = np.linspace(0, 2 * np.pi, 200)
+ax2.plot(np.cos(ring), np.sin(ring), "k:", lw=1)          # the unit circle
+arrow(ax2, x2, color="C4", label="x = (3, 2)")
+arrow(ax2, q1, color="C1", label="q1 = a1 / ||a1||")
+arrow(ax2, q2, color="C3", label="q2 = v2 / ||v2||")
+for k, col in [(0, "C1"), (1, "C3")]:                     # thin arrows c1 q1 and c2 q2: the walk that reaches x
+    qk = (q1, q2)[k]
+    arrow(ax2, c2[k] * qk, color=col, alpha=0.45, width=0.006)
+    ax2.plot([c2[k] * qk[0], x2[0]], [c2[k] * qk[1], x2[1]], "k--", lw=0.8)
+ax2.text(*(c2[0] * q1 / 2), "  c1 = x . q1 = %.2f" % c2[0], color="C1", va="top", fontsize=9)
+ax2.text(*(c2[1] * q2), "c2 = x . q2 = %.2f " % c2[1], color="C3", ha="right", va="bottom", fontsize=9)
+ax2.set_xlim(-2, 4); ax2.set_ylim(-1, 3); ax2.set_aspect("equal"); ax2.grid(alpha=0.3); ax2.legend(fontsize=8, loc="upper left")
+ax2.set_xlabel("$x_1$"); ax2.set_ylabel("$x_2$"); ax2.set_title("The orthonormal basis: coordinates are dot products")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** $\mathbf{q}_2$ is exactly Section 5's residual, rescaled to length 1: Gram–Schmidt is projection repeated, one earlier direction at a time. Once $\mathbf{q}_1$ and $\mathbf{q}_2$ are orthonormal, the coordinates of $\mathbf{x} = (3, 2)$ are two dot products, $3.40$ and $1.21$, and their squares add up to $13 = \|\mathbf{x}\|^2$ (Parseval) — the same bookkeeping the 3-D example above does with three vectors.
+
+The same idea organises colour: a pixel's $(R, G, B)$ values re-expressed in a brightness/chroma basis put almost all of their energy into the brightness coordinate (the cell below finds about 93% for one pixel, and natural images behave similarly because their colour channels are strongly correlated). Together with the eye's much lower acuity for colour detail, this is why image codecs such as JPEG compress chroma far more aggressively than luma.
 """)
 
 nb.code(r"""
@@ -424,7 +540,7 @@ print("rescaling (w, b) by 10 leaves every signed distance unchanged:",
       np.allclose((X @ (10 * w) + 10 * b) / np.linalg.norm(10 * w), signed))
 
 fig, ax = plt.subplots(figsize=(6.5, 5.5))
-sc = ax.scatter(X[:, 0], X[:, 1], c=signed, cmap="coolwarm", vmin=-3, vmax=3, edgecolor="k", lw=0.3)
+sc = ax.scatter(X[:, 0], X[:, 1], c=signed, cmap="coolwarm", vmin=-3.5, vmax=3.5, edgecolor="k", lw=0.3)
 plt.colorbar(sc, ax=ax, label="signed distance to the boundary")
 xs = np.linspace(X[:, 0].min() - 0.5, X[:, 0].max() + 0.5, 50)
 ax.plot(xs, -(w[0] * xs + b) / w[1], "k-", label="w . x + b = 0")
@@ -432,13 +548,34 @@ mid = (mu0 + mu1) / 2
 ax.quiver(mid[0], mid[1], w[0], w[1], angles="xy", scale_units="xy", scale=1, color="k", width=0.01, label="normal vector w")
 ax.scatter(mu0[0], mu0[1], marker="X", s=160, c="C0", edgecolor="k", label="centroid, class -1")
 ax.scatter(mu1[0], mu1[1], marker="X", s=160, c="C3", edgecolor="k", label="centroid, class +1")
-ax.set_aspect("equal"); ax.legend(fontsize=8, loc="upper left"); ax.grid(alpha=0.3)
+ax.set_aspect("equal"); ax.grid(alpha=0.3)
+ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2)      # below the axes: nothing is hidden
 ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$"); ax.set_title("A linear classifier is a hyperplane with normal w")
 plt.show()
 """)
 
 nb.md(r"""
-**Notice that** $\mathbf{w}$ is *perpendicular* to the decision line, not along it, and that the colour (signed distance) changes only as you move in the direction of $\mathbf{w}$ — moving parallel to the boundary changes nothing. Points near the line have small margins and are the ones a slightly different training set would flip; a support vector machine chooses $\mathbf{w}, b$ to make the smallest margin as large as possible. Scaling $(\mathbf{w}, b)$ changes the raw scores but not the boundary or the distances — which is why logistic regression needs a regulariser to pin down the scale of $\mathbf{w}$.
+**Notice that** $\mathbf{w}$ is *perpendicular* to the decision line, not along it, and that the colour (signed distance) changes only as you move in the direction of $\mathbf{w}$ — moving parallel to the boundary changes nothing. Scaling $(\mathbf{w}, b)$ changes the raw scores but not the boundary or the distances; on separable data, though, the logistic loss keeps falling as $\mathbf{w}$ is scaled up, so logistic regression needs a regulariser to pin down the scale of $\mathbf{w}$.
+
+Recall the **margin** $y\,\delta(\mathbf{x})$ of a labelled point: positive when the point is on the correct side, and larger the farther it is from the boundary. The histogram below folds both classes onto that single axis.
+""")
+
+nb.code(r"""
+smallest = margins[margins > 0].min()                      # reuses margins = y * signed from the cell above
+fig, ax = plt.subplots(figsize=(7, 4))
+bins = np.linspace(-1, 4, 26)
+stacks, _, _ = ax.hist([margins[y == -1], margins[y == 1]], bins=bins, stacked=True, color=["C0", "C3"], label=["class -1", "class +1"])
+ax.axvline(0, color="k", label="decision boundary (margin 0)")
+ax.axvline(smallest, color="C2", ls="--", label="smallest positive margin = %.3f" % smallest)
+ax.set_ylim(0, 1.45 * stacks[-1].max())                     # head-room for the legend
+ax.set_xlabel("margin  y * signed distance"); ax.set_ylabel("number of training points")
+ax.set_title("Margins of the %d training points" % len(y)); ax.legend(fontsize=8, loc="upper right"); ax.grid(alpha=0.3)
+plt.show()
+print("margins below 0: %d   between 0 and 0.5: %d   above 0.5: %d" % (np.sum(margins < 0), np.sum((margins >= 0) & (margins < 0.5)), np.sum(margins >= 0.5)))
+""")
+
+nb.md(r"""
+**Notice that** everything to the right of zero is correctly classified, the single point to the left (margin about $-0.08$) is the misclassified one, and the nine points with margins between $0$ and $0.5$ are those a slightly different training set would flip. A support vector machine chooses $\mathbf{w}, b$ to push the left edge of this histogram — the smallest margin — as far to the right as possible.
 """)
 
 # ---------------------------------------------------------------- Section 8
@@ -453,6 +590,8 @@ so random directions become nearly orthogonal. We draw 300 random vectors for $d
 """)
 
 nb.code(r"""
+from scipy.special import gammaln
+
 dims, n = [2, 10, 100, 1000], 300
 fig, axes = plt.subplots(2, 2, figsize=(11, 7))
 print(f"{'d':>6} {'std of cosine':>14} {'1/sqrt(d)':>10} {'max |cos|':>10}")
@@ -462,13 +601,19 @@ for ax, d in zip(axes.ravel(), dims):
     C = Zn @ Zn.T                                        # all n x n cosines at once
     cosines = C[np.triu_indices(n, k=1)]                 # each unordered pair exactly once
     print(f"{d:>6} {cosines.std():>14.4f} {1 / np.sqrt(d):>10.4f} {np.abs(cosines).max():>10.3f}")
-    ax.hist(cosines, bins=80, range=(-1, 1), density=True, color="C0", alpha=0.85)
-    ax.set_title(f"d = {d}: cosine of {n * (n - 1) // 2} random pairs"); ax.set_xlabel("cosine similarity"); ax.set_ylabel("density")
+    heights, _, _ = ax.hist(cosines, bins=80, range=(-1, 1), density=True, color="C0", alpha=0.85,
+                            label=f"{n * (n - 1) // 2:,} random pairs")
+    t = np.linspace(-0.999, 0.999, 800)                  # exact density of the cosine of two random directions in R^d,
+    pdf = np.exp(gammaln(d / 2) - gammaln((d - 1) / 2)) / np.sqrt(np.pi) * (1 - t ** 2) ** ((d - 3) / 2)   # the arcsine law when d = 2
+    ax.plot(t, pdf, "k--", lw=1.2, label="exact density")
+    ax.set_ylim(0, 1.25 * heights.max())                 # the arcsine density is infinite at +-1: clip it to the axis
+    ax.set_title(f"d = {d}: std {cosines.std():.3f}, 1/sqrt(d) = {1 / np.sqrt(d):.3f}")
+    ax.set_xlabel("cosine similarity"); ax.set_ylabel("density"); ax.legend(fontsize=8, loc="best")
 plt.tight_layout(); plt.show()
 """)
 
 nb.md(r"""
-**Notice that** the measured standard deviation tracks $1/\sqrt d$ almost perfectly, and at $d = 1000$ no pair out of 44,850 reaches a cosine of even $0.15$. (In $d = 2$ the histogram piles up at $\pm 1$: the cosine of a uniformly random angle has an arcsine-shaped density, so in the plane random directions are *more* likely to be nearly parallel than nearly perpendicular — the opposite of high dimensions.) This is the baseline against which any "similarity" must be judged: a cosine of $0.3$ is nothing in 10 dimensions and a ten-sigma event in 1000.
+**Notice that** the measured standard deviation tracks $1/\sqrt d$ almost perfectly (each title prints both), the histograms follow the exact density drawn as a dashed curve, and at $d = 1000$ no pair out of 44,850 reaches a cosine of even $0.15$. That density is proportional to $(1 - t^2)^{(d-3)/2}$: the arcsine law for $d = 2$ and, as $d$ grows, a bell curve of variance exactly $1/d$. (In $d = 2$ the histogram piles up at $\pm 1$: the cosine of a uniformly random angle has an arcsine-shaped density, so in the plane random directions are *more* likely to be nearly parallel than nearly perpendicular — the opposite of high dimensions.) This is the baseline against which any "similarity" must be judged: a cosine of $0.3$ is nothing in 10 dimensions and nearly a ten-sigma event in 1000.
 
 The second surprise is **distance concentration**. For random points in the unit cube, $\|\mathbf{x} - \mathbf{y}\|^2$ is a sum of $d$ independent terms, so its relative spread shrinks like $1/\sqrt d$ — the nearest and the farthest neighbour end up at almost the same distance.
 """)
@@ -494,7 +639,7 @@ for d, c, s in zip(dims, contrast, rel_spread):
 """)
 
 nb.md(r"""
-**Notice that** in two dimensions the farthest point is tens of times farther away than the nearest, while at $d = 1000$ the difference is a few percent. A nearest-neighbour method on raw 1000-dimensional noise is essentially picking at random. (The dotted theory line: the relative spread of the *squared* distance is $\approx 1.18/\sqrt d$, and taking the square root halves relative fluctuations, giving $\approx 0.59/\sqrt d$ for the distance itself.)
+**Notice that** in two dimensions the farthest point is tens of times farther away than the nearest, while at $d = 1000$ the difference is only about ten per cent. A nearest-neighbour method on raw 1000-dimensional noise is essentially picking at random. (The dotted theory line: the relative spread of the *squared* distance is $\approx 1.18/\sqrt d$, and taking the square root halves relative fluctuations, giving $\approx 0.59/\sqrt d$ for the distance itself.)
 
 Third surprise: **volume lives in the corners.** The unit ball has volume $V_d = \pi^{d/2}/\Gamma(d/2 + 1)$, the cube $[-1, 1]^d$ around it has volume $2^d$. We compare the exact ratio with a Monte Carlo estimate.
 """)
@@ -523,6 +668,30 @@ print("fraction of a ball within 90%% of its radius, 0.9^d:  d=10: %.3f   d=100:
 """)
 
 nb.md(r"""
+**Notice that** the Monte Carlo crosses sit on the exact curve, and that the curve collapses fast: by $d = 10$ the ball fills a quarter of one per cent of the cube, by $d = 20$ about one point in 40 million. Almost all of the cube's volume is in its corners, far from the centre. The same formula says that a ball keeps its volume near its surface: the fraction within 90% of the radius is $0.9^d$, only $0.35$ at $d = 10$ and $2.7 \times 10^{-5}$ at $d = 100$ (printed above).
+
+Fourth surprise: **thin shells.** A standard Gaussian sample $\mathbf{x} \in \mathbb{R}^d$ has $\|\mathbf{x}\|^2 \sim \chi^2_d$, with mean $d$ and standard deviation $\sqrt{2d}$, so $\|\mathbf{x}\|$ is about $\sqrt d \pm 0.7$ for large $d$: the radius grows, the thickness does not. We draw 5,000 samples in each of four dimensions and plot $\|\mathbf{x}\| - \sqrt d$.
+""")
+
+nb.code(r"""
+g = np.random.default_rng(3)                              # own generator, so the shared stream above is untouched
+fig, ax = plt.subplots()
+for d, col, lw in zip([2, 10, 100, 1000], ["C0", "C1", "C2", "C3"], [3, 2.5, 2, 1.5]):
+    radius = np.linalg.norm(g.normal(size=(5000, d)), axis=1)        # ||x|| for 5000 standard Gaussian samples in R^d
+    ax.hist(radius - np.sqrt(d), bins=60, range=(-4, 4), density=True, histtype="step", lw=lw, color=col,
+            label=f"d = {d}: mean {radius.mean():.2f} (sqrt(d) = {np.sqrt(d):.2f}), std {radius.std():.2f}")
+ax.set_ylim(0, 0.95)                                                 # head-room for the legend
+ax.set_xlabel("||x|| - sqrt(d)"); ax.set_ylabel("density")
+ax.set_title("Gaussian samples sit on a shell of radius sqrt(d), thickness about 0.7")
+ax.legend(fontsize=8, loc="upper right"); ax.grid(alpha=0.3)
+plt.show()
+""")
+
+nb.md(r"""
+**Notice that** all four histograms have almost the same width — a standard deviation of about $0.7$ once $d \ge 10$ (the legend reads 0.70 at $d = 10$ and 0.71 from $d = 100$ on; the exact value tends to $1/\sqrt 2 \approx 0.707$) — while the radius they sit on grows like $\sqrt d$. A 1000-dimensional Gaussian cloud is a shell of radius 31.6 and thickness 0.7: a typical sample is never near the origin, although the density is highest there. This is the thin-shell statement of the guide, and the geometry of the latent spaces in Module 18.
+""")
+
+nb.md(r"""
 **Where this bites in deep learning.** Attention scores are dot products $\mathbf{q}\cdot\mathbf{k}$ of $d_k$-dimensional vectors. For roughly unit-variance coordinates that dot product has standard deviation $\sqrt{d_k}$, so without correction the scores for different keys are spread over tens of units and the softmax saturates onto a single key. Dividing by $\sqrt{d_k}$ brings the spread back to one — this is the only reason the $\sqrt{d_k}$ appears in the transformer's attention formula.
 """)
 
@@ -545,7 +714,43 @@ print("largest weight: raw %.3f  vs  scaled %.3f" % (softmax(scores).max(), soft
 """)
 
 nb.md(r"""
-> **Try it yourself:** set `d_k = 512` and re-run. The raw-score softmax should become a one-hot vector (all attention on one key, gradients near zero for the rest), while the scaled version stays spread out. Then try dividing by `d_k` instead of `np.sqrt(d_k)` — why is that too much?
+That was a single query. To see the typical behaviour, repeat the experiment for 500 queries and for key dimensions from 4 to 1024, and record the median of the largest attention weight over the ten keys: $1/10$ would be perfectly uniform attention, $1$ a hard choice of one key.
+""")
+
+nb.code(r"""
+g = np.random.default_rng(1)                              # own generator, so the shared stream above is untouched
+
+def softmax_rows(Z):
+    e = np.exp(Z - Z.max(axis=1, keepdims=True))
+    return e / e.sum(axis=1, keepdims=True)
+
+dks = [4, 8, 16, 32, 64, 128, 256, 512, 1024]
+raw_max, scaled_max = [], []
+for dk in dks:
+    Kd, Qd = g.normal(size=(10, dk)), g.normal(size=(500, dk))      # 10 keys and 500 queries of width dk
+    Sd = Qd @ Kd.T                                                  # (500, 10) raw scores
+    raw_max.append(np.median(softmax_rows(Sd).max(axis=1)))
+    scaled_max.append(np.median(softmax_rows(Sd / np.sqrt(dk)).max(axis=1)))
+
+fig, ax = plt.subplots()
+ax.semilogx(dks, raw_max, "o-", base=2, label="raw scores  q . k")
+ax.semilogx(dks, scaled_max, "s-", base=2, label="scaled scores  q . k / sqrt(d_k)")
+ax.axhline(0.1, color="k", ls=":", label="uniform attention (1/10)")
+ax.axvline(64, color="0.6", ls="--", lw=1, label="d_k = 64, as above")
+ax.set_ylim(0, 1.05); ax.set_xticks(dks); ax.set_xticklabels([str(k) for k in dks]); ax.minorticks_off()
+ax.set_xlabel("key dimension d_k"); ax.set_ylabel("median largest attention weight")
+ax.set_title("Without the 1/sqrt(d_k) the softmax saturates as d_k grows")
+ax.legend(fontsize=8); ax.grid(alpha=0.3, which="both")
+plt.show()
+print("d_k    :", dks)
+print("raw    :", np.round(raw_max, 3))
+print("scaled :", np.round(scaled_max, 3))
+""")
+
+nb.md(r"""
+**Notice that** with raw scores the typical largest attention weight climbs with $d_k$ — about $0.94$ at the $d_k = 64$ used above, and $1.000$ to three decimals from $d_k = 512$ on. The softmax has collapsed to a hard arg-max, whose gradient is zero almost everywhere. After dividing by $\sqrt{d_k}$ it stays near $0.3$ at every width: the scaling makes the layer's behaviour independent of the head size.
+
+> **Try it yourself:** add a third curve that divides the scores by `d_k` instead of `np.sqrt(d_k)`. It sinks towards the dotted $1/10$ line — the weights become nearly equal and attention can no longer tell the keys apart. Why is that too much?
 """)
 
 # ---------------------------------------------------------------- Summary
@@ -559,7 +764,7 @@ nb.md(r"""
 - Projection $\mathbf{p} = \frac{\mathbf{a}\cdot\mathbf{b}}{\mathbf{b}\cdot\mathbf{b}}\mathbf{b}$ is the best approximation on a line; the residual is orthogonal; the squared error is a parabola.
 - Gram–Schmidt builds an orthonormal basis by subtracting projections; coordinates are then dot products and Parseval preserves length; `np.linalg.qr` agrees up to signs.
 - A linear classifier is a hyperplane $\mathbf{w}\cdot\mathbf{x} + b = 0$ with normal $\mathbf{w}$; signed distance $(\mathbf{w}\cdot\mathbf{x} + b)/\|\mathbf{w}\|$ is invariant to rescaling $(\mathbf{w}, b)$.
-- In high dimension random vectors are nearly orthogonal (cosine spread $1/\sqrt d$), distances concentrate ($\approx 0.59/\sqrt d$ relative spread), and the inscribed ball's share of the cube vanishes — hence $\sqrt{d_k}$ in attention and the failure of $k$-NN on raw high-dimensional inputs.
+- In high dimension random vectors are nearly orthogonal (cosine spread $1/\sqrt d$), distances concentrate ($\approx 0.59/\sqrt d$ relative spread), the inscribed ball's share of the cube vanishes, and Gaussian samples sit on a thin shell of radius $\sqrt d$. These facts explain why attention divides by $\sqrt{d_k}$ (without it the softmax saturates) and why $k$-NN fails on raw high-dimensional inputs.
 """)
 
 nb.md(r"""
@@ -690,6 +895,13 @@ H["E8B"] = sha_of(safe_round(float(np.min(np.abs(sd8)))))
 P11 = np.random.default_rng(33).normal(size=(20, 5)); w11 = np.array([1., 2., 0., -1., 3.]); b11 = -0.7
 H["E11A"] = sha_of(safe_round(float(ns["reflect"](P11, w11, b11).sum())))
 
+# sanity: for u = v = (1,1,1) the textbook cosine really exceeds 1 by rounding, so the E2 check "needs the clip" is honest
+_ones = np.ones(3)
+_cos_ones = (_ones @ _ones) / (np.linalg.norm(_ones) * np.linalg.norm(_ones))
+assert _cos_ones > 1.0
+with np.errstate(invalid="ignore"):
+    assert np.isnan(np.arccos(_cos_ones))
+
 # sanity: E10 ranges used by the checks must hold for the reference solution
 c2, s2 = ns["distance_concentration"](2)
 c10, _ = ns["distance_concentration"](10)
@@ -774,7 +986,7 @@ Implement `angle_between(u, v)` returning the angle in **degrees** (a float in $
 
 $$\cos\theta = \frac{\mathbf{u}\cdot\mathbf{v}}{\|\mathbf{u}\|\,\|\mathbf{v}\|}.$$
 
-Floating-point noise can push the cosine to $1.0000000002$, where `np.arccos` returns `nan`; clip the cosine to $[-1, 1]$ before taking the arc-cosine.
+Floating-point rounding can push the cosine just above 1 — for $\mathbf{u} = \mathbf{v} = (1, 1, 1)$ the textbook formula gives $1.0000000000000002$ — and then `np.arccos` returns `nan`; clip the cosine to $[-1, 1]$ before taking the arc-cosine.
 """,
     starter=r"""
 def angle_between(u, v):
@@ -786,12 +998,13 @@ def angle_between(u, v):
     check=fill(r"""
 check_close('angle between (3,4) and (4,3) is 16.26 degrees', _safe(lambda: angle_between(np.array([3., 4.]), np.array([4., 3.]))), 16.2602, tol=1e-3)
 check_close('orthogonal vectors give 90 degrees', _safe(lambda: angle_between(np.array([1., 0.]), np.array([0., 1.]))), 90.0, tol=1e-6)
-check_close('anti-parallel vectors give 180 degrees (needs the clip)', _safe(lambda: angle_between(np.array([1., 2.]), np.array([-2., -4.]))), 180.0, tol=1e-6)
-check_close('parallel vectors give 0 degrees (needs the clip)', _safe(lambda: angle_between(np.array([0.1, 0.2, 0.3]), np.array([1., 2., 3.]))), 0.0, tol=1e-6)
+check_close('anti-parallel vectors give 180 degrees', _safe(lambda: angle_between(np.array([1., 2.]), np.array([-2., -4.]))), 180.0, tol=1e-6)
+check_close('parallel vectors give 0 degrees', _safe(lambda: angle_between(np.array([0.1, 0.2, 0.3]), np.array([1., 2., 3.]))), 0.0, tol=1e-4)
+check_close('(1,1,1) with itself gives 0 degrees (its rounded cosine is 1.0000000000000002: needs the clip)', _safe(lambda: angle_between(np.ones(3), np.ones(3))), 0.0, tol=1e-4)
 check_hash('hidden: angle between (1,2,3) and (-1,0,1)', _safe(lambda: angle_between(np.array([1., 2., 3.]), np.array([-1., 0., 1.]))), '__H_E2A__')
 """),
     explanation_md=r"""
-The geometric definition of the dot product, solved for $\theta$. The clip matters: for parallel vectors the computed cosine can be $1 + 10^{-16}$, and `np.arccos` of anything outside $[-1, 1]$ is `nan`. Returning degrees rather than radians is just `np.degrees`. A frequent slip is to divide by $\|\mathbf{u}\|\|\mathbf{v}\|$ *after* the arc-cosine, or to divide by $\mathbf{u}\cdot\mathbf{u}$ (the squared norm) instead of the norm.
+The geometric definition of the dot product, solved for $\theta$. The clip matters: for parallel vectors the computed cosine can be $1 + 10^{-16}$ — for $\mathbf{u} = \mathbf{v} = (1, 1, 1)$ the product of the two computed norms is $2.9999999999999996$, so the cosine comes out as $3/2.9999999999999996 = 1.0000000000000002$ — and `np.arccos` of anything outside $[-1, 1]$ is `nan`. Returning degrees rather than radians is just `np.degrees`. A frequent slip is to divide by $\|\mathbf{u}\|\|\mathbf{v}\|$ *after* the arc-cosine, or to divide by $\mathbf{u}\cdot\mathbf{u}$ (the squared norm) instead of the norm.
 """,
 )
 
@@ -916,9 +1129,9 @@ ex.add(
     prompt_md=r"""
 Implement `gram_schmidt(A)` for a matrix `A` of shape `(m, n)` with $n \le m$ linearly independent columns $\mathbf{a}_1, \dots, \mathbf{a}_n$. Return `Q` of the same shape whose columns are orthonormal and span the same space, built in order:
 
-$$\mathbf{v}_j = \mathbf{a}_j - \sum_{i<j} (\mathbf{v}_j\cdot\mathbf{q}_i)\,\mathbf{q}_i, \qquad \mathbf{q}_j = \mathbf{v}_j / \|\mathbf{v}_j\|.$$
+$$\mathbf{v}_j = \mathbf{a}_j - \sum_{i<j} (\mathbf{a}_j\cdot\mathbf{q}_i)\,\mathbf{q}_i, \qquad \mathbf{q}_j = \mathbf{v}_j / \|\mathbf{v}_j\|.$$
 
-Because you build from $\mathbf{a}_j$ and only subtract, each $\mathbf{q}_j$ satisfies $\mathbf{q}_j\cdot\mathbf{a}_j > 0$ (so the signs are determined — `np.linalg.qr` may differ by a sign). Loops over columns are fine; do not call `np.linalg.qr` inside.
+In code, subtract the projections one at a time from the running vector (so each dot product uses the partly reduced $\mathbf{v}_j$): this *modified* Gram–Schmidt gives the same result in exact arithmetic and loses less orthogonality to rounding. Because you build from $\mathbf{a}_j$ and only subtract, each $\mathbf{q}_j$ satisfies $\mathbf{q}_j\cdot\mathbf{a}_j > 0$ (so the signs are determined — `np.linalg.qr` may differ by a sign). Loops over columns are fine; do not call `np.linalg.qr` inside.
 """,
     starter=r"""
 def gram_schmidt(A):
@@ -1157,7 +1370,11 @@ fig, ax = plt.subplots()
 ax.plot(ks, scores, "o-", label="user-user cosine CF")
 ax.axhline(rmse(user_mean[test_u], truth), color="C1", ls="--", label="user-mean baseline")
 ax.axhline(rmse(np.full(len(truth), global_mean), truth), color="C3", ls=":", label="global-mean baseline")
-ax.set_xlabel("k (number of neighbours)"); ax.set_ylabel("RMSE on held-out ratings"); ax.set_title("Collaborative filtering with cosine similarity")
+best = int(np.argmin(scores))
+ax.annotate(f"best k = {ks[best]}, RMSE {scores[best]:.3f}", (ks[best], scores[best]), xytext=(15, 55), textcoords="offset points",
+            arrowprops=dict(arrowstyle="->"))
+ax.set_xscale("log"); ax.set_xticks(ks); ax.set_xticklabels([str(k) for k in ks]); ax.minorticks_off()   # small k is where the action is
+ax.set_xlabel("k (number of neighbours, log scale)"); ax.set_ylabel("RMSE on held-out ratings"); ax.set_title("Collaborative filtering with cosine similarity")
 ax.legend(); ax.grid(alpha=0.3)
 plt.show()
 """
@@ -1172,7 +1389,7 @@ The starter cell generates the data: 80 users, 30 items, ratings 1–5 of which 
 1. **Baselines.** Predict every held-out rating by the global mean of the training ratings, then by each user's own mean. Report the RMSE of each.
 2. **Similarity.** Mean-centre each user's training row (subtract that user's mean from their known ratings; unknown entries stay 0) and compute the full user–user cosine-similarity matrix with one matrix product.
 3. **Prediction.** For a held-out pair (user $u$, item $i$), take the $k$ most similar users who *have* rated item $i$ and predict $u$'s own mean plus the similarity-weighted average of those neighbours' deviations from their means. Fall back to the user mean when no neighbour qualifies. Clip to $[1, 5]$.
-4. **Evaluation.** Compute the RMSE on the held-out ratings for several $k$ (e.g. 1, 2, 3, 5, 8, 12, 20, 40, all) and plot RMSE against $k$ with the two baselines as horizontal lines.
+4. **Evaluation.** Compute the RMSE on the held-out ratings for several $k$ (e.g. 1, 2, 3, 5, 8, 12, 20, 40, all) and plot RMSE against $k$ with the two baselines as horizontal lines (a logarithmic $k$ axis suits this spacing).
 """,
     rubric_md=r"""
 - Compute both baselines and state their RMSE before touching similarities — a recommender that does not beat the user-mean baseline is not working.

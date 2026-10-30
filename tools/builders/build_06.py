@@ -65,24 +65,36 @@ hs = np.logspace(-12, -1, 60)
 err_fwd = np.array([abs((f(x0 + h) - f(x0)) / h - exact) for h in hs])
 err_ctr = np.array([abs((f(x0 + h) - f(x0 - h)) / (2 * h) - exact) for h in hs])
 
-plt.loglog(hs, err_fwd, label="forward difference")
-plt.loglog(hs, err_ctr, label="central difference")
+plt.figure(figsize=(7.5, 4.4))
+plt.loglog(hs, err_fwd, color="C0", label="forward difference")
+plt.loglog(hs, err_ctr, color="C1", label="central difference")
 plt.loglog(hs, 2.2e-16 * abs(f(x0)) / hs, "k:", label=r"round-off $\varepsilon|f|/h$")
+# for f = x^3 at 2 the truncation errors are exactly 6h + h^2 (forward) and h^2 (central)
+plt.loglog(hs, 6 * hs, "C0--", lw=1, label=r"forward truncation $|f''|\,h/2 = 6h$")
+plt.loglog(hs, hs**2, "C1--", lw=1, label=r"central truncation $|f'''|\,h^2/6 = h^2$")
+plt.axvline(1e-5, color="0.6", lw=1)
+plt.text(1.4e-5, 1e3, "h = 1e-5,\nused in gradient checks", fontsize=8, color="0.35", va="top")
+plt.ylim(1e-13, 1e4)
 plt.xlabel("step h"); plt.ylabel("absolute error of f'(2)")
-plt.title("Finite differences: truncation vs round-off"); plt.legend(); plt.show()
+plt.title("Finite differences: truncation vs round-off"); plt.legend(fontsize=8, loc="upper left"); plt.show()
 
 for h in (1e-1, 1e-5, 1e-8, 1e-12):
     fwd = (f(x0 + h) - f(x0)) / h
     ctr = (f(x0 + h) - f(x0 - h)) / (2 * h)
     print(f"h={h:7.0e}  forward={fwd:.10f}  central={ctr:.10f}")
-print("best achievable: forward ~1e-8 around h=1e-8, central ~1e-10 around h=1e-5")
+print(f"grid minimum: forward {err_fwd.min():.0e} at h={hs[err_fwd.argmin()]:.0e}, "
+      f"central {err_ctr.min():.0e} at h={hs[err_ctr.argmin()]:.0e}")
+print("the V's vertex sits near h = 1e-8 (forward, floor of order 1e-7 to 1e-8) and h = 1e-5 (central, floor of order 1e-10 to 1e-11);")
+print("a grid minimum left of the vertex, as above, is a lucky round-off cancellation, not the step to use")
 print("automatic differentiation of x**3 at 2 gives 3*x**2 =", 3 * x0**2, "with no h at all")
 """)
 
 nb.md(r"""
-Notice the V shape. Left of the minimum the two evaluations of $f$ agree to almost all their
-digits and the subtraction destroys the rest; right of it the Taylor remainder dominates. Central
-differences buy two orders of magnitude at the price of one extra evaluation per input — and a
+Notice the V shape. Left of its vertex the two evaluations of $f$ agree to almost all their
+digits and the subtraction destroys the rest (each curve follows the dotted round-off line); right
+of it the Taylor remainder dominates (each curve lies on its dashed truncation line, slope 1 for
+forward and slope 2 for central differences). Central differences buy two to three orders of magnitude at
+the price of one extra evaluation per input — and a
 *full gradient* costs $2n$ evaluations for $n$ inputs. Keep this plot in mind: it is why finite
 differences are a *test*, not a training method, and why gradient checks (Section 7) use
 $h \approx 10^{-5}$ in float64.
@@ -201,7 +213,61 @@ $\bar v_3 = 1$, $\ \bar v_2 = 2 v_2 = 16$, $\ \bar v_1 = 16$, $\ \bar x_1 = \bar
 One sweep, both derivatives — and $x_1$, which is used twice, correctly collects two contributions.
 For a loss with millions of parameters and one output this is the whole game: the full gradient
 costs a small constant times one forward pass, not millions of them. We will *measure* this once
-we have a reverse-mode engine (Section 5).
+we have a reverse-mode engine (Section 5). First, the three sweeps side by side on the graph: the
+two forward sweeps come from `Dual`, the reverse sweep is the hand computation above.
+""")
+
+nb.code(r"""
+# the two forward sweeps, node by node (the same arithmetic as f above, with every node kept)
+X1, X2 = Dual(2.0, 1.0), Dual(3.0, 0.0)                     # seed x1
+V1 = X1 * X2; V2 = V1 + X1; V3 = V2 ** 2
+tan1 = {"x1": X1.dot, "x2": X2.dot, "v1": V1.dot, "v2": V2.dot, "v3": V3.dot}
+X1, X2 = Dual(2.0, 0.0), Dual(3.0, 1.0)                     # seed x2
+V1 = X1 * X2; V2 = V1 + X1; V3 = V2 ** 2
+tan2 = {"x1": X1.dot, "x2": X2.dot, "v1": V1.dot, "v2": V2.dot, "v3": V3.dot}
+val = {"x1": 2.0, "x2": 3.0, "v1": V1.val, "v2": V2.val, "v3": V3.val}
+# the reverse sweep: adjoints from the output back to the leaves
+bar = {"v3": 1.0}
+bar["v2"] = bar["v3"] * 2 * val["v2"]                        # 16
+bar["v1"] = bar["v2"] * 1.0                                  # 16
+bar["x2"] = bar["v1"] * val["x1"]                            # 32
+bar["x1"] = bar["v1"] * val["x2"] + bar["v2"] * 1.0          # 48 + 16 = 64: x1 has two children
+
+pos = {"x1": (0, 0), "x2": (2, 0), "v1": (1, 0.9), "v2": (0, 1.8), "v3": (2, 1.8)}   # inputs at the bottom
+names = {"x1": "x1", "x2": "x2", "v1": "v1 = x1*x2", "v2": "v2 = v1+x1", "v3": "v3 = v2**2"}
+edges = [("x1", "v1", "x2 = 3"), ("x2", "v1", "x1 = 2"), ("v1", "v2", "1"), ("x1", "v2", "1"),
+         ("v2", "v3", "2 v2 = 16")]                          # (parent, child, local derivative)
+panels = [(tan1, "dot", "(a) forward sweep seeded at x1"), (tan2, "dot", "(b) forward sweep seeded at x2"),
+          (bar, "bar", "(c) one reverse sweep from bar L = 1")]
+fig, axes = plt.subplots(1, 3, figsize=(10, 3.8))
+for ax, (q, sym, title) in zip(axes, panels):
+    rev = sym == "bar"
+    for a, c, lab in edges:
+        src, dst = (pos[c], pos[a]) if rev else (pos[a], pos[c])
+        ax.annotate("", xy=dst, xytext=src, arrowprops=dict(arrowstyle="->", lw=1.3, shrinkA=24, shrinkB=24,
+                                                           color="tab:red" if rev else "tab:blue"))
+        t = 0.45                                             # label 45% of the way from parent to child
+        lx, ly = pos[a][0] + t * (pos[c][0] - pos[a][0]), pos[a][1] + t * (pos[c][1] - pos[a][1])
+        ax.text(lx, ly, lab, fontsize=7, ha="center", va="center", color="0.3",
+                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none"))
+    for n, (px, py) in pos.items():
+        extra = "\n= 48 + 16" if (rev and n == "x1") else ""
+        ax.text(px, py, f"{names[n]}\n{sym} = {q[n]:g}{extra}", ha="center", va="center", fontsize=8,
+                bbox=dict(boxstyle="round,pad=0.3", fc="#dbe9ff" if n.startswith("x") else "#ffe8c2", ec="gray"))
+    ax.set_xlim(-0.6, 2.6); ax.set_ylim(-0.4, 2.2); ax.axis("off"); ax.set_title(title, fontsize=10)
+fig.suptitle("Forward mode needs one sweep per input, reverse mode one sweep per output")
+plt.tight_layout(); plt.show()
+print("tangents seeded at x1:", tan1)
+print("tangents seeded at x2:", tan2)
+print("adjoints             :", bar)
+""")
+
+nb.md(r"""
+**Notice that** panels (a) and (b) each end with a single useful number at the output — $64 = \partial f/\partial x_1$
+and $32 = \partial f/\partial x_2$ — so two inputs cost two sweeps, while the one reverse sweep in panel (c) deposits
+both numbers at the leaves. The arrows tell the same story: forward mode multiplies along the edges in the
+direction of computation, reverse mode multiplies along them backwards. And $x_1$, which feeds two operations,
+collects $3 \cdot 16 + 1 \cdot 16 = 64$ from its two outgoing edges — the sum over children in the formula for $\bar v_k$.
 
 **Try it yourself:** add `__truediv__` to `Dual` using the quotient rule and check $\frac{d}{dx}\,\frac{\sin x}{x}$ at $x = 2$ against the closed form $\frac{x\cos x - \sin x}{x^2}$.
 """)
@@ -243,18 +309,49 @@ delta2 = np.array([y_hat - y_target])          # dL/dz2 for a linear output with
 dW2 = np.outer(delta2, a1); db2 = delta2
 delta1 = (W2.T @ delta2) * drelu(z1)
 dW1 = np.outer(delta1, x);  db1 = delta1
-print("delta2 =", delta2, " dW2 =", dW2, " db2 =", db2)
-print("delta1 =", delta1)
-print("dW1 =\n", dW1, "\ndb1 =", db1)
+# (+ 0.0 only tidies the printout: -2 * 0.0 is the float -0.0, which would print as "-0.")
+print("delta2 =", delta2, " dW2 =", dW2 + 0.0, " db2 =", db2)
+print("delta1 =", delta1 + 0.0)
+print("dW1 =\n", dW1 + 0.0, "\ndb1 =", db1 + 0.0)
 """)
 
 nb.md(r"""
 The first hidden unit had $z_1 = -1 < 0$, so its ReLU derivative is 0 and *every* gradient that
 flows through it is 0: its weights and bias will not move. That is the "dying ReLU" problem in
-two lines of arithmetic. Also note what had to be kept from the forward pass: $a_1$ (for $\partial\mathcal{L}/\partial W_2$)
-and $z_1$ (for the mask). In a deep network this stored-activation memory, not the weights,
-dominates training memory. (A leaky ReLU, with derivative `np.where(z > 0, 1.0, 0.01)`, would let the dead
-unit receive a small gradient and recover.)
+two lines of arithmetic. Is that zero a flaw of backpropagation, or the truth? Let us look at the loss
+itself as each hidden unit's bias is varied, everything else held fixed.
+""")
+
+nb.code(r"""
+def loss_221(b1_):
+    # the 2-2-1 network's loss as a function of the hidden biases only
+    return 0.5 * ((W2 @ relu(W1 @ x + b1_))[0] - y_target) ** 2
+
+ts = np.linspace(-2.0, 3.0, 201)
+fig, axes = plt.subplots(1, 2, figsize=(10, 3.6), sharey=True)
+for j, ax in enumerate(axes):
+    curve = [loss_221(np.where(np.arange(2) == j, t, 0.0)) for t in ts]    # vary b1[j], keep the other at 0
+    ax.plot(ts, curve, lw=2, label=f"loss as b1[{j}] varies")
+    ax.plot(ts, loss_221(b1) + db1[j] * ts, "--", label=f"tangent, slope dL/db1[{j}] = {db1[j] + 0.0:g}")
+    ax.plot(0, loss_221(b1), "ko", label="current b1 = (0, 0)")
+    ax.set_xlabel(f"bias of hidden unit {j + 1}, b1[{j}]"); ax.set_ylim(-0.2, 6)
+    ax.legend(fontsize=8, loc="upper right")
+axes[0].axvspan(-2, 1, color="0.9")
+axes[0].text(-1.9, 0.3, "unit 1 off (z < 0): flat", fontsize=8)
+axes[0].set_ylabel("loss  0.5 (y_hat - 3)^2")
+axes[0].set_title("(a) dead unit: the loss is flat around b1[0] = 0"); axes[1].set_title("(b) live unit: slope -1")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the dead unit's bias sits on a plateau: the loss stays exactly 2 for every $b_1[0] \le 1$
+(the unit's pre-activation is $b_1[0] - 1$), so backprop's 0 is the true slope, not a bug, and gradient
+descent has no reason to move it. The live unit's tangent has slope $-1$, the `db1[1]` printed above.
+A leaky ReLU, with derivative `np.where(z > 0, 1.0, 0.01)`, would tilt the plateau slightly and let the
+dead unit receive a small gradient and recover.
+
+Also note what had to be kept from the forward pass: $a_1$ (for $\partial\mathcal{L}/\partial W_2$) and $z_1$
+(for the mask). In a deep network this stored-activation memory, not the weights, dominates training memory.
 """)
 
 # ---------------------------------------------------------------- Section 5
@@ -392,9 +489,48 @@ for v in L.topo_order():
 
 nb.md(r"""
 The order lists leaves first and the loss last; `backward()` walks it in reverse so that every
-node's gradient is complete before it is passed on. The `-1.0` leaf and the `*` node with value $-5$
-are what `__sub__` creates (`a - b` is implemented as `a + b * (-1)`) — a reminder that the engine
-differentiates the program *as written*, constants and all.
+node's gradient is complete before it is passed on. The list has more nodes than Section 2's graph.
+Let us draw the graph the engine actually built, placing each node one column to the right of its
+deepest parent, with the `data` and `grad` it holds after `backward()`.
+""")
+
+nb.code(r"""
+order = L.topo_order()
+depth = {}
+for v in order:                                   # parents come first, so their depth is already known
+    depth[v] = 0 if not v._parents else 1 + max(depth[p] for p in v._parents)
+names = {id(w): "w", id(x): "x", id(b): "b", id(y): "y"}
+leaves = [v for v in order if not v._parents]
+xy = {}
+for k, v in enumerate(leaves):                    # leaves stacked in the first column
+    xy[v] = (0.0, 0.55 * (len(leaves) - 1) - 1.1 * k)
+for v in order:                                   # an operation sits right of its deepest parent, at their mean height
+    if v._parents:
+        xy[v] = (2.2 * depth[v], float(np.mean([xy[p][1] for p in v._parents])))
+max_depth = max(depth.values())
+
+fig, ax = plt.subplots(figsize=(9, 3.8))
+for v in order:
+    for p in v._parents:
+        ax.annotate("", xy=xy[v], xytext=xy[p],
+                    arrowprops=dict(arrowstyle="->", color="gray", lw=1.1, shrinkA=24, shrinkB=24))
+for v in order:
+    label = names.get(id(v), v._op or "const")
+    ax.text(*xy[v], f"{label}\ndata {v.data:g}\ngrad {v.grad:g}", ha="center", va="center", fontsize=8,
+            bbox=dict(boxstyle="round,pad=0.3", fc="#dbe9ff" if not v._parents else "#ffe8c2", ec="gray"))
+ax.set_xlim(-1, 2.2 * max_depth + 1); ax.set_ylim(-2.8, 2.8); ax.axis("off")
+ax.set_title("What the engine built for L = (w*x + b - y)**2: data and grad of every node")
+plt.show()
+print(len(order), "nodes, against 8 in Section 2's hand-drawn graph")
+""")
+
+nb.md(r"""
+**Notice that** two nodes appear that you did not write: `(w*x + b) - y` became `(w*x + b) + y * (-1.0)`, so the
+engine created a constant leaf with data $-1$ (grad $20 = 5 \cdot 4$, dutifully computed although nobody
+needs it) and a `*` node with data $-5$, followed by a second `+`. That is what `__sub__` and `__neg__`
+create (`a - b` is implemented as `a + b * (-1)`) — a reminder that the engine differentiates the program
+*as written*, constants and all. Every other grad matches the hand sweep of the concept guide's Figure 1(b): 12 for $w$, 8 for $x$, 4 for $b$
+and $-4$ for $y$.
 
 Now the step you should never skip: compare with central differences. We write a helper that
 evaluates an expression on plain floats, perturbs one input at a time, and reports the relative error.
@@ -438,8 +574,9 @@ print(f"relative error = {relative_error(g_auto, g_num):.2e}   (< 1e-7 means the
 """)
 
 nb.md(r"""
-A relative error around $10^{-10}$ is the signature of a correct engine; a wrong closure would
-show up as $10^{-2}$ or worse. We will systematise this in Section 7.
+A relative error around $10^{-10}$ is the signature of a correct engine; a wrong closure usually shows
+up as $10^{-2}$ or worse, but only at inputs where the bug matters, as Section 7 will show. We will
+systematise this in Section 7.
 
 Now the promised measurement of **cost**. Take a function of $n$ inputs. Forward mode (our `Dual`)
 needs $n$ sweeps, each costing $O(n)$, so $O(n^2)$ total; reverse mode (our `Value`) needs one
@@ -448,38 +585,58 @@ forward pass plus one backward sweep, $O(n)$ total.
 
 nb.code(r"""
 def chain(xs):
-    # a function of n inputs whose graph has about 2n nodes
+    # a function of n inputs whose graph has about 2n operation nodes (3n counting the inputs)
     acc = xs[0]
     for xi in xs[1:]:
         acc = acc * xi + xi
     return acc ** 2
 
+def full_gradient_forward(xs):
+    n = len(xs)
+    return np.array([chain([Dual(v, 1.0 if j == i else 0.0) for j, v in enumerate(xs)]).dot
+                     for i in range(n)])                          # n sweeps
+
+def full_gradient_reverse(xs):
+    vs = [Value(v) for v in xs]; out = chain(vs); out.backward()  # one sweep
+    return np.array([v.grad for v in vs])
+
+def best_time(fn, arg, repeats=3):
+    # the minimum over a few repeats is the least noisy estimate of a run time
+    best = np.inf
+    for _ in range(repeats):
+        t0 = time.perf_counter(); result = fn(arg); best = min(best, time.perf_counter() - t0)
+    return best, result
+
 ns = [25, 50, 100, 200, 400]
 t_fwd, t_rev = [], []
 for n in ns:
     xs = rng.uniform(0.9, 1.1, size=n)
-    t0 = time.perf_counter()
-    grad_fwd = np.array([chain([Dual(v, 1.0 if j == i else 0.0) for j, v in enumerate(xs)]).dot
-                         for i in range(n)])                      # n sweeps
-    t_fwd.append(time.perf_counter() - t0)
-    t0 = time.perf_counter()
-    vs = [Value(v) for v in xs]; out = chain(vs); out.backward()   # one sweep
-    grad_rev = np.array([v.grad for v in vs])
-    t_rev.append(time.perf_counter() - t0)
+    tf, grad_fwd = best_time(full_gradient_forward, xs)
+    tr, grad_rev = best_time(full_gradient_reverse, xs)
+    t_fwd.append(tf); t_rev.append(tr)
     assert relative_error(grad_fwd, grad_rev) < 1e-10
 
+n_arr = np.array(ns, dtype=float)
 plt.loglog(ns, t_fwd, "o-", label="forward mode (n Dual sweeps)")
 plt.loglog(ns, t_rev, "s-", label="reverse mode (1 Value backward)")
-plt.xlabel("number of inputs n"); plt.ylabel("seconds for the full gradient")
-plt.title("Cost of a full gradient: forward vs reverse mode"); plt.legend(); plt.show()
+plt.loglog(n_arr, t_fwd[0] * (n_arr / n_arr[0]) ** 2, "k--", lw=1, label="slope 2 (cost ~ n^2)")
+plt.loglog(n_arr, t_rev[0] * n_arr / n_arr[0], "k:", lw=1, label="slope 1 (cost ~ n)")
+plt.xticks(ns, [str(n) for n in ns]); plt.minorticks_off()
+plt.xlabel("number of inputs n"); plt.ylabel("seconds for the full gradient (best of 3)")
+plt.title("Cost of a full gradient: forward vs reverse mode"); plt.legend(fontsize=8); plt.show()
 print("ratio forward/reverse at n=400: %.0fx" % (t_fwd[-1] / t_rev[-1]))
+print("fitted log-log slopes: forward %.2f, reverse %.2f"
+      % (np.polyfit(np.log(n_arr), np.log(t_fwd), 1)[0], np.polyfit(np.log(n_arr), np.log(t_rev), 1)[0]))
 """)
 
 nb.md(r"""
-The two curves have different slopes on the log-log plot: forward mode's time grows roughly like
-$n^2$, reverse mode's like $n$, and the gap widens without bound. For a 124-million-parameter
-model the ratio is not 100 but $10^8$. This is the "cheap gradient principle", and it is the
-reason gradient-based deep learning is possible at all.
+The two curves have different slopes on the log-log plot: forward mode's time follows the slope-2
+guide ($n$ sweeps of $O(n)$ each), reverse mode's stays close to the slope-1 guide (one sweep of $O(n)$; the fitted slope printed above
+is a little over 1 because of Python's per-node overhead), and the
+gap widens without bound. Reverse mode is not free — it still grows like one evaluation of the
+function — but the *ratio* of gradient cost to function cost does not depend on $n$. For a
+124-million-parameter model the forward/reverse ratio is not 100 but of order $10^7$ to $10^8$. This
+is the "cheap gradient principle", and it is the reason gradient-based deep learning is possible at all.
 
 ### Training a neural network with the engine
 
@@ -497,7 +654,8 @@ def bce_with_logits(s, y):
     # fused, numerically stable binary cross-entropy of logit s against label y in {0, 1}
     sd = s.data
     out = Value(max(sd, 0.0) + math.log1p(math.exp(-abs(sd))) - y * sd, (s,), "bce")
-    p = 1.0 / (1.0 + math.exp(-sd))
+    # sigmoid(sd), written so that math.exp only ever sees a non-positive argument (no OverflowError)
+    p = 1.0 / (1.0 + math.exp(-sd)) if sd >= 0 else math.exp(sd) / (1.0 + math.exp(sd))
     def _backward(g):
         s.grad += (p - y) * g                   # the famous p - y
     out._backward = _backward
@@ -540,8 +698,11 @@ model = MLP([2, 16, 16, 1])
 params = model.parameters()
 print("parameters:", len(params), " (2*16+16) + (16*16+16) + (16+1) =", 2 * 16 + 16 + 16 * 16 + 16 + 16 + 1)
 
-plt.scatter(X[:, 0], X[:, 1], c=y, cmap="coolwarm", s=18, edgecolor="k", linewidth=0.3)
-plt.xlabel("x1"); plt.ylabel("x2"); plt.title("Two moons: 200 points, two classes"); plt.show()
+for c, m in ((0, "o"), (1, "s")):                  # a marker per class as well as a colour
+    plt.scatter(*X[y == c].T, c=["tab:blue", "tab:red"][c], marker=m, s=18, edgecolor="k", linewidth=0.3,
+                label=f"class {c}")
+plt.xlabel("x1"); plt.ylabel("x2"); plt.title("Two moons: 200 points, two classes")
+plt.legend(loc="upper right"); plt.show()
 """)
 
 nb.code(r"""
@@ -572,7 +733,8 @@ for step in range(steps):
 print(f"training took {time.time() - t0:.1f}s with {len(params)} parameters of pure Python")
 
 plt.plot(loss_hist, lw=0.8, alpha=0.5, label="minibatch loss")
-plt.plot(np.convolve(loss_hist, np.ones(20) / 20, mode="valid"), lw=2, label="20-step moving average")
+ma = np.convolve(loss_hist, np.ones(20) / 20, mode="valid")      # ma[k] averages steps k .. k+19
+plt.plot(np.arange(19, len(loss_hist)), ma, lw=2, label="20-step trailing average")
 plt.xlabel("SGD step"); plt.ylabel("binary cross-entropy"); plt.title("Training loss of the Value-MLP")
 plt.legend(); plt.show()
 """)
@@ -583,12 +745,16 @@ scores = np.array([model([a, b_]).data for a, b_ in zip(gx.ravel(), gy.ravel())]
 plt.contourf(gx, gy, 1 / (1 + np.exp(-scores)), levels=20, cmap="coolwarm", alpha=0.6)
 plt.colorbar(label="P(class 1)")
 plt.contour(gx, gy, scores, levels=[0.0], colors="k", linewidths=1.5)
-plt.scatter(X[:, 0], X[:, 1], c=y, cmap="coolwarm", s=18, edgecolor="k", linewidth=0.3)
-plt.xlabel("x1"); plt.ylabel("x2"); plt.title(f"Decision boundary, train accuracy {accuracy(model):.3f}"); plt.show()
+for c, m in ((0, "o"), (1, "s")):
+    plt.scatter(*X[y == c].T, c=["tab:blue", "tab:red"][c], marker=m, s=18, edgecolor="k", linewidth=0.3,
+                label=f"class {c}")
+plt.xlabel("x1"); plt.ylabel("x2"); plt.title(f"Decision boundary, train accuracy {accuracy(model):.3f}")
+plt.legend(loc="upper right"); plt.show()
 """)
 
 nb.md(r"""
-A few hundred SGD steps carve a curved boundary between the moons. Every gradient came from the
+A few hundred SGD steps carve a bent, piecewise-linear boundary between the moons (a ReLU network is
+piecewise linear in its input, so the black line is a polyline with corners). Every gradient came from the
 closures you read above — nothing else. The whole loop is the template of every training script:
 forward, zero the gradients, backward, update.
 
@@ -704,10 +870,66 @@ print(f"relative errors: fused vs numerical {relative_error(fused, num):.1e}, Ja
 nb.md(r"""
 Three routes, one answer: raise the logit of the correct class, lower the others, each by exactly
 how wrong its probability is. The fused form needed no Jacobian and no division by $p$ — the two
-things that go wrong numerically when a prediction is confidently wrong.
+things that go wrong numerically when a prediction is confidently wrong. How wrong does it have to be?
+Let us make the wrong class's logit exceed the correct one's by a growing gap, $z = (\text{gap}, 0, 0)$
+with target 1, and follow both routes in float64.
+""")
 
-**Try it yourself:** set `z = np.array([30.0, 0.0, 0.0])` with `target = 1`. The fused gradient is fine;
-what happens to `-y_onehot / p` on the chained route?
+nb.code(r"""
+gaps = np.arange(0.0, 801.0, 1.0)
+p_true, inv_p, g_chain, g_fused = [], [], [], []
+with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+    for gap in gaps:
+        zz = np.array([gap, 0.0, 0.0]); pp = softmax(zz)
+        p_true.append(pp[target]); inv_p.append(1.0 / pp[target])
+        g_chain.append((softmax_jacobian(zz).T @ (-y_onehot / pp))[target])
+        g_fused.append((pp - y_onehot)[target])
+    p_true, inv_p, g_chain, g_fused = map(np.array, (p_true, inv_p, g_chain, g_fused))
+    log_p, log_inv_p = np.log10(p_true), np.log10(inv_p)
+over_at = gaps[~np.isfinite(inv_p)].min()             # first gap where 1/p is inf
+under_at = gaps[p_true == 0].min()                    # first gap where p itself is 0
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 3.8))
+axes[0].plot(gaps, log_p, label="log10 p, correct class")
+axes[0].plot(gaps, log_inv_p, label="log10 (1/p), the factor in -y/p")
+axes[0].axhline(np.log10(np.finfo(float).max), color="0.6", lw=1)
+axes[0].axhline(np.log10(np.nextafter(0, 1)), color="0.6", lw=1)
+axes[0].text(10, 290, "largest float64", fontsize=7, color="0.4", va="top")
+axes[0].text(10, -305, "smallest float64 above 0", fontsize=7, color="0.4", va="bottom")
+axes[0].axvline(over_at, color="k", ls=":", label=f"1/p = inf from gap {over_at:g}")
+axes[0].axvline(under_at, color="k", ls="--", label=f"p = 0 from gap {under_at:g}")
+axes[0].set_ylim(-340, 340)
+axes[0].set_xlabel("logit gap z_wrong - z_correct"); axes[0].set_ylabel("log10 of the float64 value")
+axes[0].set_title("(a) what the chained route divides by")
+axes[0].legend(fontsize=7, loc="center right", bbox_to_anchor=(0.8, 0.5))   # in the empty wedge between the lines
+ok = np.isfinite(g_chain)
+axes[1].plot(gaps, g_fused, lw=4, color="0.7", label="fused: p - y")
+axes[1].plot(gaps[ok], g_chain[ok], "--", color="tab:blue", label="chained: Jacobian^T (-y/p)")
+axes[1].axvspan(over_at, gaps[-1], color="tab:red", alpha=0.15, label="chained gradient is inf or nan")
+axes[1].set_ylim(-1.1, 0.1)
+axes[1].set_xlabel("logit gap z_wrong - z_correct"); axes[1].set_ylabel("dL/dz of the correct class")
+axes[1].set_title("(b) gradient of the correct logit"); axes[1].legend(fontsize=8, loc="center left")
+plt.tight_layout(); plt.show()
+print(f"1/p overflows from gap {over_at:g}; p underflows to 0 from gap {under_at:g}")
+print(f"largest difference chained - fused while 1/p is finite: {np.max(np.abs(g_chain[ok] - g_fused[ok])):.1e}")
+with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+    for gap in (over_at, under_at):
+        zz = np.array([gap, 0.0, 0.0]); pp = softmax(zz)
+        print(f"gap {gap:g}: chained gradient {softmax_jacobian(zz).T @ (-y_onehot / pp)}, fused {pp - y_onehot + 0.0}")
+""")
+
+nb.md(r"""
+**Notice that** the fused gradient sits at $-1$ for every gap beyond a few units, while the chained route
+needs $1/p$, which overflows at a gap of 710 ($e^{710}$ exceeds the largest float64) and turns the gradient into
+`[inf, -inf, nan]` — 36 units before $p$ itself underflows to 0 (gap 746), when every entry becomes `nan` and the loss
+$-\ln p$ becomes `inf`. Up to that
+point the two routes agree to rounding: the chained route is not *wrong*, it is *fragile*. A gap of hundreds
+is rare in float64, but in float16 (largest value 65504) $1/p$ overflows once $p < 1.5\times10^{-5}$, at a gap of
+only about 11.
+
+**Try it yourself:** set `z = np.array([720.0, 0.0, 0.0])` with `target = 1` in the code cell that first defines `z` and `target`
+(the fused-gradient check just above). Which of
+`p`, `-y_onehot / p`, the chained gradient and the loss $-\ln p$ are still finite? Then try `800.0`.
 """)
 
 # ---------------------------------------------------------------- Section 7
@@ -719,7 +941,7 @@ A wrong backward rule does not crash: it trains a slightly wrong model, slowly. 
 
 $$
 r = \frac{\|g - \hat g\|_2}{\|g\|_2 + \|\hat g\|_2}, \qquad
-r < 10^{-7} \text{ correct},\quad 10^{-7}\!-\!10^{-4} \text{ kinks},\quad > 10^{-2} \text{ bug}.
+r < 10^{-7} \text{ correct},\quad 10^{-7}\!-\!10^{-4} \text{ kinks},\quad 10^{-4}\!-\!10^{-2} \text{ suspicious},\quad > 10^{-2} \text{ bug}.
 $$
 
 We check the scalar engine on the trained network, then plant two bugs and watch the checker catch them.
@@ -756,17 +978,70 @@ def smallest_relu_input(model, idx):
             acts = list(np.maximum(pre, 0.0))
     return closest
 
+batches, closest = [], []
 for trial in range(5):
     idx = rng.choice(len(X), size=8, replace=False)
     r, g, g_num = grad_check(model, idx)
-    print(f"minibatch {trial}: relative error {r:.1e}, closest hidden pre-activation to 0: {smallest_relu_input(model, idx):.1e}")
+    batches.append(idx); closest.append(smallest_relu_input(model, idx))
+    print(f"minibatch {trial}: relative error {r:.1e}, closest hidden pre-activation to 0: {closest[-1]:.1e}")
 """)
 
 nb.md(r"""
 Relative errors around $10^{-10}$ say the engine is right. If one minibatch shows a much larger error, look at
 the last column: a hidden pre-activation within about $h = 10^{-5}$ of zero means the central difference
-straddled a ReLU kink, and the "error" is the kink, not the code (Section 8 shows this in isolation). That is
-why a gradient check is run on several minibatches, and why a single outlier is interpreted before it is believed.
+straddled a ReLU kink, and the "error" is the kink, not the code. Let us take apart the minibatch whose
+pre-activation came closest to zero: how does a central difference behave at a kink, which of the twenty
+checked entries are off, and what happens to them when $h$ shrinks below the distance to the kink?
+""")
+
+nb.code(r"""
+k = int(np.argmin(closest))
+entry_err = {}
+for hh in (1e-5, 1e-7):
+    r_, g_, gn_ = grad_check(model, batches[k], h=hh)
+    both_zero = (g_ == 0) & (gn_ == 0)                        # parameters behind a ReLU that is off for the whole minibatch
+    per_entry = np.abs(g_ - gn_) / np.maximum(np.maximum(np.abs(g_), np.abs(gn_)), 1e-300)
+    entry_err[hh] = (r_, per_entry, both_zero)
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 3.8))
+h0 = 1e-5; zs = np.linspace(-3e-5, 3e-5, 241)
+axes[0].plot(zs, (zs > 0).astype(float), lw=3, color="0.7", label="analytic relu'(z)")
+axes[0].plot(zs, (np.maximum(zs + h0, 0) - np.maximum(zs - h0, 0)) / (2 * h0), "--", color="tab:blue",
+             label="central difference, h = 1e-5")
+axes[0].axvspan(-h0, h0, color="tab:orange", alpha=0.12, label="|z| < h: the estimate is a ramp")
+z_demo = 1e-6
+est_demo = (max(z_demo + h0, 0) - max(z_demo - h0, 0)) / (2 * h0)
+axes[0].plot(z_demo, est_demo, "ko")
+axes[0].annotate(f"z = 1e-6 gives {est_demo:.2f}", (z_demo, est_demo), (1.2e-5, 0.3),
+                 arrowprops=dict(arrowstyle="->"), fontsize=8)
+axes[0].set_xlabel("pre-activation z"); axes[0].set_ylabel("estimate of relu'(z)")
+axes[0].set_title("(a) central differences straddle the kink"); axes[0].legend(fontsize=8, loc="upper left")
+idx20 = np.arange(20)
+for hh, m in ((1e-5, "o"), (1e-7, "s")):
+    r_, e_, z_ = entry_err[hh]
+    axes[1].semilogy(idx20[~z_], e_[~z_], m, label=f"h = {hh:.0e}: overall r = {r_:.1e}")
+z_ = entry_err[1e-5][2]
+axes[1].semilogy(idx20[z_], np.full(z_.sum(), 1e-12), "x", color="0.4",
+                 label="both exactly 0 (a ReLU off for all 8 examples)")   # nothing to compare: drawn at 1e-12
+axes[1].axhline(1e-2, color="k", ls="--", lw=1, label="1e-2: bug threshold")
+axes[1].set_xticks(range(0, 20, 2)); axes[1].set_ylim(1e-13, 1e4)
+axes[1].set_xlabel("checked parameter (20 chosen at random)"); axes[1].set_ylabel("relative error of that entry")
+axes[1].set_title(f"(b) minibatch {k}: pre-activation {closest[k]:.1e} from 0")
+axes[1].legend(fontsize=7, loc="upper center")
+plt.tight_layout(); plt.show()
+for hh, (r_, e_, z_) in entry_err.items():
+    print(f"h = {hh:.0e}: overall r = {r_:.1e}, entries above 1e-2: {int(np.sum(e_ > 1e-2))} of 20, "
+          f"largest entry {e_.max():.1e}, entries exactly 0 on both routes: {int(z_.sum())}")
+""")
+
+nb.md(r"""
+**Notice that** at $h = 10^{-5}$ only two of the twenty entries are wrong, and both become ordinary round-off once
+$h = 10^{-7}$ is smaller than the distance to the kink (the panel title): the overall error falls by about six orders
+of magnitude, into the "correct" band. A wrong backward rule would not go away when $h$ shrinks — it is wrong at
+every $h$. Panel (a) shows why: inside $|z| < h$ the central difference of ReLU is a ramp, not a step, and at
+$z = 10^{-6}$ it reports $0.55$ where the derivative is 1. (The grey crosses are parameters whose gradient is exactly
+0 on both routes, because a ReLU on their path is off for all eight examples — Section 4's plateau again.) That is why a
+gradient check is run on several minibatches, and why a single outlier is interpreted before it is believed.
 
 Now let us plant two bugs and watch the checker catch them.
 """)
@@ -790,12 +1065,16 @@ def buggy_mul(self, other):
     out._backward = _backward
     return out
 
-def check_expression(fn, point, label):
+def rel_err_at(fn, point):
+    # relative error between the engine's gradient and central differences at one point
     vs = [Value(v) for v in point]
     out = fn(*vs); out.backward()
     g = np.array([v.grad for v in vs])
     g_num = numerical_grad(lambda *t: fn(*[F(v) for v in t]).v, list(point))
-    print(f"{label:38s} relative error = {relative_error(g, g_num):.1e}")
+    return relative_error(g, g_num)
+
+def check_expression(fn, point, label):
+    print(f"{label:38s} relative error = {rel_err_at(fn, point):.1e}")
 
 expr = lambda a, b: (a * b).tanh() + a * a
 good_tanh, good_mul = Value.tanh, Value.__mul__
@@ -811,14 +1090,52 @@ check_expression(expr, [0.3, 0.2], "repaired engine")
 """)
 
 nb.md(r"""
-The multiplication bug is loud at any point. The `tanh` bug is nearly invisible near zero (where
-$1 - a^2 \approx 1 - \tanh^2 a$) and glaring for larger inputs — which is why you check at several
-points and parameter scales, not just at a small random initialisation.
+Two points are not much of a test. Let us slide the check point along a ray, $(a, b) = s\,(1.5, 1.2)$, from tiny
+to large inputs, and record the relative error of each engine: $s = 1$ is the "larger inputs" point above and
+$s = 0.2$ is close to the small one.
+""")
 
-Three practical rules: check in **float64** (in float32 the floor is about $10^{-3}$, indistinguishable
-from a mild bug); freeze **randomness** (dropout masks, data order) so both loss evaluations see the
+nb.code(r"""
+scales = np.logspace(-2, 0.5, 26)
+curves = {}
+for label, patch in [("correct engine", {}), ("buggy tanh", {"tanh": buggy_tanh}), ("buggy mul", {"__mul__": buggy_mul})]:
+    try:
+        for name, method in patch.items():
+            setattr(Value, name, method)
+        curves[label] = [rel_err_at(expr, [1.5 * s, 1.2 * s]) for s in scales]
+    finally:
+        Value.tanh, Value.__mul__ = good_tanh, good_mul       # always restore the correct engine
+
+plt.figure(figsize=(7.5, 4.4))
+plt.axhspan(1e-7, 1e-4, color="0.92")
+plt.text(0.011, 1e-5, "1e-7 to 1e-4: acceptable only at kinks", fontsize=8, color="0.3", va="center")
+plt.axhline(1e-2, color="k", ls="--", lw=1)
+plt.text(0.011, 7e-3, "above 1e-2: certainly a bug", fontsize=8, color="0.3", va="top")
+for (label, r_s), m in zip(curves.items(), ["o", "s", "^"]):
+    plt.loglog(scales, r_s, m + "-", ms=4, label=label)
+for s_mark, text in ((0.2, "near the small point"), (1.0, "(1.5, 1.2)")):
+    plt.axvline(s_mark, color="0.5", ls=":", lw=1)
+    plt.text(s_mark * 1.05, 3e-15, text, fontsize=8, color="0.3")
+plt.ylim(1e-15, 1e3)
+plt.xlabel("input scale s,   (a, b) = s * (1.5, 1.2)"); plt.ylabel("relative error r")
+plt.title("A gradient check sees each bug only at some input scales")
+plt.legend(fontsize=8, loc="upper left"); plt.show()
+for label, r_s in curves.items():
+    print(f"{label:15s}" + "  ".join(f"s={s:.2g}: {r_:.1e}" for s, r_ in zip(scales[::5], r_s[::5])))
+""")
+
+nb.md(r"""
+**Notice that** the two bugs hide at opposite ends. The `tanh` bug stays below $10^{-7}$ for $s \le 0.1$ (the closure sees the tanh input
+$u = ab = 1.8\,s^2$, and near zero $1 - u^2 \approx 1 - \tanh^2 u$ to order $u^4 \propto s^8$, hence the steep slope) and crosses the $10^{-2}$ bug line only around $s = 0.5$. The multiplication bug is
+loud for small inputs but drops below the bug line at $s = 1$ and to round-off by $s = 3$: the buggy rule happens
+to get `a * a` right (both parents are $a$, so swapping them changes nothing), and the `a * b` term is multiplied by
+$\tanh'(ab) \approx 0$ once $\tanh$ saturates. A check at one point can miss either bug; checks at several points
+and parameter scales — not just at a small random initialisation — catch both.
+
+Three practical rules: check in **float64** (in float32 a correct rule scores about $4 \times 10^{-3}$ at the usual $h = 10^{-5}$,
+and even the best steps leave $10^{-7}$ to $10^{-5}$, indistinguishable from a mild bug); freeze **randomness** (dropout masks, data order) so both loss evaluations see the
 same function; and expect **kinks** (ReLU, max) to produce isolated large errors when a pre-activation
-sits within $h$ of zero — Section 8 shows one.
+sits within $h$ of zero, as in the minibatch taken apart above.
 """)
 
 # ---------------------------------------------------------------- Section 8
@@ -826,8 +1143,9 @@ nb.md(r"""
 ## 8. Where autodiff goes wrong
 
 Autodiff differentiates the program you wrote, not the function you meant. Three demonstrations:
-a false alarm at a ReLU kink, overflow in a naive log-sum-exp, and gradients vanishing through a
-long chain of sigmoids.
+a false alarm at a ReLU kink (the one Section 7 took apart, in isolation), overflow in a naive
+log-sum-exp, and gradients vanishing — or, under the right conditions, exploding — through a long
+chain of sigmoids.
 
 **Log-sum-exp.** $\ln\sum_i e^{z_i}$ overflows once any $z_i > 709$. Subtracting $m = \max_i z_i$ fixes it
 exactly: $\ln\sum_i e^{z_i} = m + \ln\sum_i e^{z_i - m}$, and every exponent is now $\le 0$.
@@ -851,27 +1169,39 @@ print(f"naive  log-sum-exp = {naive},  softmax = {naive_softmax}")
 print(f"stable log-sum-exp = {stable:.6f},  softmax = {stable_softmax}")
 print(f"log-softmax of the first entry = {z[0] - stable:.6f}  (computed without ever forming p)")
 
-# (c) vanishing gradients through a chain of sigmoid units
-def sigmoid_chain_grad(depth, weight):
+# (c) vanishing (and exploding) gradients through a chain of sigmoid units
+def sigmoid_chain_grad(depth, weight, bias=0.0):
     a = 0.5
     grad = 1.0
     for _ in range(depth):
-        zz = weight * a
+        zz = weight * a + bias
         s = 1 / (1 + np.exp(-zz))
-        grad *= s * (1 - s) * weight     # local derivative of sigmoid(w*a) w.r.t. a
+        grad *= s * (1 - s) * weight     # local derivative of sigmoid(w*a + b) w.r.t. a
         a = s
     return grad
 
 depths = np.arange(1, 31)
-for wgt in (1.0, 4.0, 8.0):
-    plt.semilogy(depths, [abs(sigmoid_chain_grad(d, wgt)) for d in depths], "o-", ms=3, label=f"weight {wgt:g}")
-plt.semilogy(depths, 0.25 ** depths, "k--", label=r"bound $4^{-L}$ for weight 1")
+for wgt, bias, lab in [(1.0, 0.0, "weight 1"), (4.0, 0.0, "weight 4 (sigmoid saturates)"),
+                       (8.0, -4.0, "weight 8, bias -4 (pre-activation held at 0)")]:
+    plt.semilogy(depths, [abs(sigmoid_chain_grad(d, wgt, bias)) for d in depths], "o-", ms=3, label=lab)
+plt.semilogy(depths, 0.25 ** depths, "k--", lw=1, label=r"bound $4^{-L}$ for weight 1")
+plt.semilogy(depths, 2.0 ** depths, "k:", lw=1, label=r"$(8/4)^L = 2^L$")
 plt.xlabel("depth L"); plt.ylabel("|d output / d input|"); plt.title("Gradient through a chain of sigmoid units")
-plt.legend(); plt.show()
-print("sigma' <= 1/4, so with unit weights the gradient shrinks at least like 4^-L; large weights explode instead")
+plt.legend(fontsize=8); plt.show()
+print(f"at depth 30: weight 1 -> {sigmoid_chain_grad(30, 1.0):.1e}, weight 4 -> {sigmoid_chain_grad(30, 4.0):.1e}, "
+      f"weight 8 with bias -4 -> {sigmoid_chain_grad(30, 8.0, -4.0):.2e}")
+print("sigma' <= 1/4: with unit weights the gradient shrinks at least like 4^-L; large weights that saturate the")
+print("sigmoid shrink it even faster, and only |w| > 4 with pre-activations near 0 (here w=8, b=-4) makes it")
+print("explode, like (w/4)^L = 2^L")
 """)
 
 nb.md(r"""
+In part (c) the per-layer factor is $w\,\sigma'(z)$ with $\sigma'(z) \le 1/4$. With weight 1 the curve runs just below its $4^{-L}$
+bound: $a$ settles near 0.66, where each factor is about $0.225$ rather than $\tfrac14$. A larger weight does *not* simply make the gradient explode: with weight 4 the pre-activation $z = 4a$ settles
+near 3.9, in the flat part of the sigmoid where $\sigma' \approx 0.02$, so each layer multiplies by about $0.08$ and
+the gradient vanishes even faster. Explosion needs both $|w| > 4$ and pre-activations that stay near 0, which
+the bias $-4$ arranges for weight 8 (every $z$ is exactly 0, so every factor is $8 \cdot \tfrac14 = 2$).
+
 Three different failure modes, three different remedies: interpret kinks correctly when checking
 (or check away from them), always compute logarithms of sums of exponentials in the shifted form
 (this is what `log_softmax` and `BCEWithLogitsLoss` do, and what our fused `bce_with_logits` did), and
@@ -892,11 +1222,13 @@ the decay changes; then by ReLU with weight 1, where the chain is exactly 1 for 
 nb.md(r"""
 ## Summary
 
-* Finite differences have an accuracy floor set by round-off (about $10^{-8}$ forward, $10^{-10}$ central
-  in float64) and cost one or two extra evaluations **per input**; they are for testing, not training.
+* Finite differences have an accuracy floor set by round-off (about $10^{-7}$ to $10^{-8}$ forward, $10^{-10}$ to
+  $10^{-11}$ central in float64) and cost one or two extra evaluations **per input**; they are for testing, not training.
 * A computational graph records every primitive operation; the forward pass evaluates it in topological order.
 * Forward mode (dual numbers) pushes tangents, one sweep per input; reverse mode pulls adjoints, one sweep
-  per output. For a scalar loss, reverse mode's cost is independent of the number of parameters — we measured it.
+  per output. For a scalar loss, reverse mode costs a small constant times one evaluation of the function,
+  whatever the number of parameters, while forward mode needs $n$ sweeps — we measured $n^2$ versus $n$ scaling.
+* A zero gradient through a dead ReLU is the true slope of a flat direction, not a bug.
 * Backpropagation is reverse mode on a layered network: $\delta_l = (W_{l+1}^\top\delta_{l+1})\odot f'(z_l)$,
   $\partial\mathcal L/\partial W_l = \delta_l a_{l-1}^\top$; it needs the stored activations.
 * A `Value` class with `data`, `grad`, parents and a `_backward` closure, plus a topological sort, is a complete
@@ -904,8 +1236,10 @@ nb.md(r"""
 * Array autograd uses vector-Jacobian products: $\bar A = G B^\top$, $\bar B = A^\top G$, broadcast ⇒ sum,
   elementwise ⇒ mask; the fused softmax-cross-entropy gradient is $p - y$. Our NumPy rules matched the scalar
   engine to $10^{-16}$.
+  Fusing also avoids the division by $p$, which overflows once a prediction is confidently wrong.
 * Gradient checking with central differences and a relative error catches wrong rules in seconds — check in
-  float64, at several points, away from kinks.
+  float64, at several points and input scales (each planted bug hid at one end), and away from kinks (a kink's
+  false alarm vanishes when $h$ shrinks, a bug's does not).
 * Kinks, overflow (use log-sum-exp) and long chains (vanishing/exploding gradients) are where "the derivative
   of the program" stops being "the derivative you wanted".
 
@@ -1459,7 +1793,7 @@ from sklearn.datasets import make_moons
 def bce_with_logits(s, y):
     sd = s.data
     out = Value(max(sd, 0.0) + math.log1p(math.exp(-abs(sd))) - y * sd, (s,), "bce")
-    p = 1.0 / (1.0 + math.exp(-sd))
+    p = 1.0 / (1.0 + math.exp(-sd)) if sd >= 0 else math.exp(sd) / (1.0 + math.exp(sd))   # never overflows
     def _backward(g):
         s.grad += (p - y) * g
     out._backward = _backward
@@ -1547,15 +1881,21 @@ for step in range(1, 301):
 final_acc = train_accuracy()
 print(f"final train accuracy: {final_acc:.3f}")
 
-fig, axes = plt.subplots(1, 2, figsize=(11, 4))
-axes[0].plot(losses, lw=0.8, alpha=0.5); axes[0].plot(np.convolve(losses, np.ones(15) / 15, mode="valid"), lw=2)
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+axes[0].plot(losses, lw=0.8, alpha=0.5, label="minibatch loss")
+axes[0].plot(np.arange(14, len(losses)), np.convolve(losses, np.ones(15) / 15, mode="valid"), lw=2,
+             label="15-step trailing average")             # each average is drawn at the last step it covers
 axes[0].set_xlabel("Adam step"); axes[0].set_ylabel("minibatch BCE"); axes[0].set_title("Training loss")
+axes[0].legend()
 gx, gy = np.meshgrid(np.linspace(-1.8, 2.8, 50), np.linspace(-1.3, 1.8, 40))
 S = np.array([model([a, b]).data for a, b in zip(gx.ravel(), gy.ravel())]).reshape(gx.shape)
 axes[1].contourf(gx, gy, 1 / (1 + np.exp(-S)), levels=20, cmap="coolwarm", alpha=0.6)
 axes[1].contour(gx, gy, S, levels=[0.0], colors="k")
-axes[1].scatter(X[:, 0], X[:, 1], c=y, cmap="coolwarm", s=15, edgecolor="k", linewidth=0.3)
+for c, mk in ((0, "o"), (1, "s")):
+    axes[1].scatter(*X[y == c].T, c=["tab:blue", "tab:red"][c], marker=mk, s=15, edgecolor="k", linewidth=0.3,
+                    label=f"class {c}")
 axes[1].set_xlabel("x1"); axes[1].set_ylabel("x2"); axes[1].set_title(f"Decision boundary (accuracy {final_acc:.2f})")
+axes[1].legend(loc="upper right")
 plt.tight_layout(); plt.show()
 """
 
@@ -1578,7 +1918,7 @@ _hs = np.logspace(-12, -1, 23)
 print("ex1 estimates:", ns["forward_diff"](_cube, 2.0, 0.1), ns["central_diff"](_cube, 2.0, 0.1),
       "best h:", ns["best_h"](np.exp, 1.0, np.e, _hs, ns["forward_diff"]), ns["best_h"](np.exp, 1.0, np.e, _hs, ns["central_diff"]))
 
-# Ex 2 hidden: derivative of x*exp(x)*sin(x)/(1+x) at 1.3
+# Ex 2 hidden: derivative of x*exp(x)*sin(x)/(1+x) at 2.1
 _f2 = lambda x: x * x.exp() * x.sin() / (x + 1.0)
 _d2 = ns["derivative"](_f2, 2.1)
 _d2_exact = (lambda x: (math.exp(x) * math.sin(x) * (1 + x) + x * math.exp(x) * math.sin(x) * (1 + x) + x * math.exp(x) * math.cos(x) * (1 + x) - x * math.exp(x) * math.sin(x)) / (1 + x) ** 2)(2.1)
@@ -1648,7 +1988,8 @@ These exercises rebuild the pieces of an automatic-differentiation system: finit
 forward mode with dual numbers, a reverse sweep by hand, topological sorting, the closures of a scalar
 autograd engine, the matrix backward rules, a fused classification loss, a gradient checker, and a
 planted bug to find. The mini-project trains a network with *your* engine. Only NumPy, `math` and
-matplotlib are allowed — no PyTorch, no JAX. The concept guide (`README.md`) has every formula you need.
+matplotlib (plus scikit-learn's `make_moons` for the project data) are allowed — no PyTorch, no JAX. The
+concept guide (`README.md`) has every formula you need.
 """,
     setup_code=SETUP,
 )
@@ -1684,8 +2025,11 @@ except Exception:
     bh_f = bh_c = None
 check('best forward-difference h for exp at 1 lies in [1e-9, 1e-7]', bh_f is not None and 1e-9 <= bh_f <= 1e-7)
 check('best central-difference h for exp at 1 lies in [1e-7, 1e-4]', bh_c is not None and 1e-7 <= bh_c <= 1e-4)
-check('central beats forward at h=1e-3 for sin at 0.5',
-      (abs(central_diff(np.sin, 0.5, 1e-3) - np.cos(0.5)) < abs(forward_diff(np.sin, 0.5, 1e-3) - np.cos(0.5))) if c_est is not None else False)
+try:
+    sin_ok = bool(abs(central_diff(np.sin, 0.5, 1e-3) - np.cos(0.5)) < abs(forward_diff(np.sin, 0.5, 1e-3) - np.cos(0.5)))
+except Exception:
+    sin_ok = False
+check('central beats forward at h=1e-3 for sin at 0.5', sin_ok)
 """,
     explanation_md=r"""
 The forward estimate carries an $O(h)$ error ($3xh + h^2 = 0.61$ here, giving 12.61) while the central one is
@@ -1707,13 +2051,16 @@ The hidden check asks for $\frac{d}{dx}\Big[\frac{x\,e^{x}\sin x}{x + 1}\Big]$ a
 """,
     starter=STARTER_2, solution=SOL_2,
     check=rf"""
-try:
-    d_prod = derivative(lambda x: x * x * x, 2.0)                      # 3x^2 = 12
-    d_quot = derivative(lambda x: x.sin() / x, 2.0)                    # (x cos x - sin x)/x^2
-    d_exp = derivative(lambda x: (x * 3.0).exp(), 0.5)                 # 3 e^{{1.5}}
-    d_hidden = derivative(lambda x: x * x.exp() * x.sin() / (x + 1.0), 2.1)
-except Exception:
-    d_prod = d_quot = d_exp = d_hidden = None
+def _deriv(fn, at):
+    # each derivative in its own try, so that one unfinished rule does not fail the other checks
+    try:
+        return derivative(fn, at)
+    except Exception:
+        return None
+d_prod = _deriv(lambda x: x * x * x, 2.0)                              # 3x^2 = 12
+d_quot = _deriv(lambda x: x.sin() / x, 2.0)                            # (x cos x - sin x)/x^2
+d_exp = _deriv(lambda x: (x * 3.0).exp(), 0.5)                         # 3 e^{{1.5}}
+d_hidden = _deriv(lambda x: x * x.exp() * x.sin() / (x + 1.0), 2.1)
 check_close('product rule: d/dx x^3 at 2', d_prod, 12.0)
 check_close('quotient rule: d/dx sin(x)/x at 2', d_quot, (2 * np.cos(2) - np.sin(2)) / 4)
 check_close('chain through exp: d/dx e^(3x) at 0.5', d_exp, 3 * np.exp(1.5))
@@ -1942,13 +2289,16 @@ check_close('dA for L = sum(AB)', dA, np.array([[1.0, 2.0], [1.0, 2.0]]))
 check_close('dB for L = sum(AB)', dB, np.array([[4.0, 4.0], [6.0, 6.0]]))
 A2 = rng.normal(size=(3, 4)); B2 = rng.normal(size=(4, 2)); C2 = rng.normal(size=(3, 2))
 loss_fn = lambda Y: float(np.sum((Y - C2) ** 2) + np.sum(np.sin(Y)))
+Y2 = A2 @ B2
+G2 = 2 * (Y2 - C2) + np.cos(Y2)                     # dL/dY for this loss
 try:
-    Y2 = A2 @ B2
-    G2 = 2 * (Y2 - C2) + np.cos(Y2)                 # dL/dY for this loss
     dA2, dB2 = matmul_backward(A2, B2, G2)
+except Exception:
+    dA2 = dB2 = None
+try:
     nA, nB = numerical_matmul_grads(A2, B2, loss_fn)
 except Exception:
-    dA2 = dB2 = nA = nB = None
+    nA = nB = None
 check('shapes: dA like A, dB like B', dA2 is not None and np.shape(dA2) == A2.shape and np.shape(dB2) == B2.shape)
 check_close('rectangular case: dA matches central differences', dA2, nA, tol=1e-5)
 check_close('rectangular case: dB matches central differences', dB2, nB, tol=1e-5)
@@ -1977,12 +2327,27 @@ Z8 = np.array([[2.0, 1.0, 0.1], [0.5, 0.5, 0.5], [100.0, 0.0, -100.0], [-3.0, 4.
 lab8 = np.array([0, 2, 2, 1])
 try:
     lp = log_softmax(Z8)
+except Exception:
+    lp = None
+try:
     loss8, grad8 = softmax_ce(Z8, lab8)
 except Exception:
-    lp = loss8 = grad8 = None
-check('log-softmax rows exponentiate to probabilities summing to 1', lp is not None and np.allclose(np.exp(lp).sum(axis=1), 1.0))
-check('no inf/nan for logits of +-100', lp is not None and np.all(np.isfinite(lp)) and loss8 is not None and np.isfinite(loss8))
-check_close('uniform row has log-prob -log 3', (lp[1] if lp is not None else None), np.full(3, -np.log(3)))
+    loss8 = grad8 = None
+try:
+    rows_ok = bool(np.allclose(np.exp(lp).sum(axis=1), 1.0))
+except Exception:
+    rows_ok = False
+try:
+    finite_ok = bool(np.all(np.isfinite(lp)) and np.isfinite(loss8))
+except Exception:
+    finite_ok = False
+try:
+    lp_uniform = np.asarray(lp)[1]
+except Exception:
+    lp_uniform = None
+check('log-softmax rows exponentiate to probabilities summing to 1', rows_ok)
+check('no inf/nan for logits of +-100', finite_ok)
+check_close('uniform row has log-prob -log 3', lp_uniform, np.full(3, -np.log(3)))
 def _num_grad(Z, h=1e-6):
     g = np.zeros_like(Z)
     for idx in np.ndindex(Z.shape):
@@ -1994,7 +2359,11 @@ try:
 except Exception:
     ng = None
 check_close('gradient (P - Y)/N matches central differences', grad8, ng, tol=1e-6)
-check('gradient rows sum to zero', grad8 is not None and np.allclose(grad8.sum(axis=1), 0.0))
+try:
+    grad_rows_ok = bool(np.allclose(np.asarray(grad8).sum(axis=1), 0.0))
+except Exception:
+    grad_rows_ok = False
+check('gradient rows sum to zero', grad_rows_ok)
 check_hash('hidden: mean loss on the test logits', loss8, '{HASH_8}')
 """,
     explanation_md=r"""
@@ -2068,8 +2437,9 @@ For each situation, say whether you would use forward mode or reverse mode, roug
 2. Forward mode: three inputs, so three sweeps (one per input, each seeding a different tangent) give the entire
    $5000\times3$ Jacobian. Reverse mode would need 5000 sweeps, one per output. Dual numbers or `jax.jvp` are the tools.
 3. Forward-over-reverse: compute the gradient $\nabla L$ with one reverse sweep, then take a forward-mode (directional)
-   derivative of that gradient in direction $v$. Cost is about two to four forward-pass equivalents, independent of the
-   parameter count, and the $10^7\times10^7$ Hessian is never formed (Pearlmutter's trick).
+   derivative of that gradient in direction $v$. Cost is a small constant multiple of one gradient (roughly two to
+   three gradient evaluations), independent of the parameter count, and the $10^7\times10^7$ Hessian is never
+   formed (Pearlmutter's trick).
 4. Parallelism does not change the operation count: $2\times10^7$ forward passes per gradient versus roughly three for
    backpropagation, a factor of about $10^7$ more work per step. The estimate is also only approximate — truncation
    and round-off errors, severe in float32 — while reverse mode is exact to rounding. Finite differences are for
@@ -2108,17 +2478,26 @@ W11 = r11.normal(size=(2, 3)); b11 = r11.normal(size=2) * 0.1
 theta11 = np.concatenate([W11.ravel(), b11])
 def _unpack(th):
     return th[:6].reshape(2, 3), th[6:]
+# the buggy layer, checked with your grad_check (its forward pass and loss are correct)
+loss_buggy = lambda th: buggy_forward_backward(*_unpack(th), X11, Y11)[0]
+grad_buggy = lambda th: np.concatenate([buggy_forward_backward(*_unpack(th), X11, Y11)[1].ravel(),
+                                        buggy_forward_backward(*_unpack(th), X11, Y11)[2]])
 try:
-    loss_fixed = lambda th: fixed_forward_backward(*_unpack(th), X11, Y11)[0]
-    grad_fixed = lambda th: np.concatenate([fixed_forward_backward(*_unpack(th), X11, Y11)[1].ravel(),
-                                            fixed_forward_backward(*_unpack(th), X11, Y11)[2]])
-    r_fixed, _ = grad_check(loss_fixed, grad_fixed, theta11)
-    same_loss = abs(loss_fixed(theta11) - buggy_forward_backward(W11, b11, X11, Y11)[0]) < 1e-12
-    grad_buggy = lambda th: np.concatenate([buggy_forward_backward(*_unpack(th), X11, Y11)[1].ravel(),
-                                            buggy_forward_backward(*_unpack(th), X11, Y11)[2]])
-    r_buggy, _ = grad_check(loss_fixed, grad_buggy, theta11)
+    r_buggy, _ = grad_check(loss_buggy, grad_buggy, theta11)
 except Exception:
-    r_fixed = r_buggy = None; same_loss = False
+    r_buggy = None
+# your repaired layer
+loss_fixed = lambda th: fixed_forward_backward(*_unpack(th), X11, Y11)[0]
+grad_fixed = lambda th: np.concatenate([fixed_forward_backward(*_unpack(th), X11, Y11)[1].ravel(),
+                                        fixed_forward_backward(*_unpack(th), X11, Y11)[2]])
+try:
+    r_fixed, _ = grad_check(loss_fixed, grad_fixed, theta11)
+except Exception:
+    r_fixed = None
+try:
+    same_loss = abs(loss_fixed(theta11) - loss_buggy(theta11)) < 1e-12
+except Exception:
+    same_loss = False
 check('the buggy version fails the gradient check (relative error > 1e-2)', r_buggy is not None and r_buggy > 1e-2)
 check('the fixed version passes the gradient check (relative error < 1e-7)', r_fixed is not None and r_fixed < 1e-7)
 check('the fix leaves the forward pass / loss unchanged', bool(same_loss))
@@ -2127,7 +2506,8 @@ check_hash('bug location named correctly', bug_location, '{HASH_11}')
     explanation_md=r"""
 The line `dZ = G * (1.0 - Z ** 2)` uses the *input* of $\tanh$ where the derivative needs the *output*:
 $\tanh'(z) = 1 - \tanh(z)^2 = 1 - A^2$. Near $z = 0$ the two agree to second order, so with small weights the gradient
-check reports a mild error of order $10^{-3}$–$10^{-2}$; with weights of size 2 the pre-activations are large,
+check reports a mild error, typically of order $10^{-4}$–$10^{-2}$ (the band that is merely suspicious, easy to wave away as a kink);
+with weights of size 2 the pre-activations are large,
 $1 - z^2$ even turns negative, and the relative error approaches 1. This scale dependence is the diagnostic
 signature of a wrong activation derivative, and it is why a gradient check at one tiny initialisation is not enough.
 The forward pass and the loss are untouched by the fix, which the third check confirms.
@@ -2152,15 +2532,16 @@ X, y = make_moons(n_samples=200, noise=0.15, random_state=0)
 3. Before training, gradient-check a handful of parameters with central differences (relative error below $10^{-6}$).
 4. Train with minibatch SGD or Adam for a few hundred steps, remembering to zero the gradients before each backward
    pass. Keep the run under about 30 seconds: a 2–16–1 network, minibatches of 32 and 300 steps are plenty.
-5. Plot the training loss curve and the decision boundary (evaluate the model on a grid and use `plt.contourf`), and
-   report the final training accuracy. Aim for **above 95 percent**.
+5. Plot the training loss curve and the decision boundary (evaluate the model on a grid and use `plt.contourf`),
+   each with a title, axis labels and a legend, and report the final training accuracy. Aim for **above 95 percent**.
 """,
     rubric_md=r"""
 - Your network is built only from `Value` objects and your own code (no NumPy autodiff tricks, no frameworks).
 - A gradient check on at least 5 parameters passes with relative error below $10^{-6}$ before training starts.
 - Gradients are zeroed before every backward pass, and the loss is averaged over the minibatch.
 - Training accuracy exceeds 95 percent and the loss curve decreases (noisy minibatch loss is fine).
-- The decision boundary plot shows a curved boundary separating the two moons, with axis labels and a title.
+- The decision boundary plot shows a bent boundary separating the two moons (piecewise linear for ReLU units,
+  smooth for tanh), with axis labels, a title and a legend for the two classes.
 - You can explain why the fused `bce_with_logits` is preferable to `-(y*log(p) + (1-y)*log(1-p))` built from `log` and `exp` nodes.
 """,
     solution_sketch_md=r"""
@@ -2168,7 +2549,7 @@ Reuse the lesson's `Neuron`/`Layer`/`MLP` (a neuron is a bias plus a sum of `w_i
 `bce_with_logits(s, y)` whose forward value is $\max(s,0) + \log(1 + e^{-|s|}) - ys$ and whose closure adds $(\sigma(s) - y)\,g$ to
 `s.grad`. The training loop is forward → zero grads → `backward()` → update. Adam converges in fewer steps than SGD, which
 matters when every step costs several thousand Python objects; with Adam (learning rate 0.05, minibatch 32) a 2–16–1
-network reaches about 97 percent training accuracy in 300 steps. The gradient check at initialisation costs 20 extra
+network reaches about 99 percent training accuracy in 300 steps (95 percent after 100). The gradient check at initialisation costs 20 extra
 minibatch evaluations and takes a fraction of a second.
 """,
     solution_code=PROJECT_SOLUTION,

@@ -79,6 +79,7 @@ print("eigenvalues by hand:       ", lam_hand)
 w, V = np.linalg.eig(A)
 order = np.argsort(-w.real)              # sort descending so the two agree
 w, V = w[order].real, V[:, order].real
+V = V * np.sign(V[0])                    # sign convention: first entry positive, as in the README
 print("np.linalg.eig eigenvalues: ", w)
 print("eigenvectors (unit length, as columns):")
 print(V)
@@ -89,35 +90,55 @@ print("angle between eigenvectors: %.1f degrees  (not orthogonal: A is not symme
 
 # --- the grid picture
 ts = np.linspace(-1, 1, 11)
-fig, axes = plt.subplots(1, 2, figsize=(11, 5))
+e1 = np.array([1., 0.])
+cols = ["tab:red", "tab:blue"]
+fig, axes = plt.subplots(1, 2, figsize=(11, 5.4))
 for ax, M, title, lim in [(axes[0], np.eye(2), "before: unit grid", 1.6),
                           (axes[1], A, "after: A applied to every point", 6.5)]:
     for t in ts:
         for seg in (np.array([[t, t], [-1, 1]]), np.array([[-1, 1], [t, t]])):
             p = M @ seg
             ax.plot(p[0], p[1], color="lightgray", lw=0.8)
-    g = M @ np.array([1., 0.])          # a generic vector: it gets turned
+    for i, c in enumerate(cols):        # the eigenvector LINES: A maps each of them onto itself
+        ax.plot([-2 * lim * V[0, i], 2 * lim * V[0, i]], [-2 * lim * V[1, i], 2 * lim * V[1, i]],
+                ":", color=c, lw=1)
+    if M is A:                          # faint copies of the input arrows, for comparison
+        for u, c in [(e1, "tab:green"), (V[:, 0], cols[0]), (V[:, 1], cols[1])]:
+            ax.annotate("", xy=u, xytext=(0, 0),
+                        arrowprops=dict(arrowstyle="->", color=c, lw=1.5, alpha=0.45))
+    g = M @ e1                          # a generic vector: it gets turned
     ax.annotate("", xy=g, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="tab:green", lw=2))
-    ax.text(g[0] * 1.1, g[1] + 0.15, "e1 (generic)", color="tab:green")
-    for i, c in enumerate(["tab:red", "tab:blue"]):
+    ax.text(g[0], g[1] + 0.05 * lim, "e1", color="tab:green", ha="center", va="bottom", fontsize=11)
+    for i, c in enumerate(cols):
         u = M @ V[:, i]
         ax.annotate("", xy=u, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color=c, lw=2.5))
-        ax.text(u[0] * 1.12, u[1] * 1.12, f"v{i+1} (lambda={w[i]:.0f})", color=c)
+        ax.text(u[0] + 0.06 * lim, u[1], f"v{i+1}", color=c, va="center", fontsize=11)
     ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_aspect("equal")
     ax.set_title(title); ax.set_xlabel("x1"); ax.set_ylabel("x2")
-plt.tight_layout(); plt.show()
+from matplotlib.lines import Line2D
+handles = [Line2D([], [], color=cols[0], lw=2.5, label="v1 = (1, 1)/sqrt2, lambda = 5"),
+           Line2D([], [], color=cols[1], lw=2.5, label="v2 = (1, -2)/sqrt5, lambda = 2"),
+           Line2D([], [], color="tab:green", lw=2, label="e1 = (1, 0): not an eigenvector"),
+           Line2D([], [], color="gray", ls=":", lw=1, label="dotted: the eigenvector lines"),
+           Line2D([], [], color="gray", lw=1.5, alpha=0.45, label="faint: the arrows before A")]
+fig.legend(handles=handles, loc="lower center", ncol=3, fontsize=9)
+plt.tight_layout(rect=(0, 0.1, 1, 1)); plt.show()
 """)
 
 nb.md(r"""
-Notice that the green vector $e_1$ is rotated as well as stretched, while the red and blue
-eigenvectors keep their direction: $v_1 = (1, 1)/\sqrt2$ is stretched by $5$, and
+Notice that the green vector $e_1$ is rotated as well as stretched — in the right panel it
+leaves the $x_1$-axis, where its faint copy still lies — while the red and blue eigenvectors
+stay on their dotted lines: $v_1 = (1, 1)/\sqrt2$ is stretched by $5$, and
 $v_2 = (1, -2)/\sqrt5$ by $2$. The grid squares become parallelograms whose area is
 multiplied by $\det A = 10 = \lambda_1 \lambda_2$. The two eigenvector *lines* meet at about
 72 degrees, not 90 — orthogonality is a privilege reserved for symmetric matrices (Section 3).
 
 **Try it yourself:** replace `A` with the rotation matrix `np.array([[0., -1.], [1., 0.]])`
 (remove the `.real` calls first). The eigenvalues come out as $\pm i$ — no real direction
-survives a rotation, so complex eigenvalues always signal a rotational component.
+survives a rotation, so complex eigenvalues always signal a rotational component. Only the
+`np.linalg.eig` and the $Av = \lambda v$ lines are meaningful then: the by-hand formula gives
+`nan` (the discriminant is negative), the angle line is meaningless for complex vectors, and
+matplotlib draws only the real parts of the complex arrows (with a ComplexWarning).
 """)
 
 # ---------------------------------------------------------------- Section 2
@@ -150,17 +171,21 @@ print("power iteration:  lambda_1 ~ %.10f,  v_1 ~ %s" % (lam_est, v_est))
 print("np.linalg.eig:    lambda_1 = %.10f,  v_1 = %s" % (w[0], V[:, 0]))
 
 err = np.abs(hist - w[0])
+print("first three errors:", err[:3], " (the k = 1 estimate is exact)")
 k = np.arange(1, len(hist) + 1)
-plt.semilogy(k, err, "o-", label="|estimate - lambda_1|")
-plt.semilogy(k, err[0] * (w[1] / w[0]) ** (k - 1), "--", label="C * (lambda_2/lambda_1)^k")
+plt.semilogy(k, np.where(err > 0, err, np.nan), "o-", label="|estimate - lambda_1|  (exact zeros not drawn)")
+plt.semilogy(k, err[1] * (w[1] / w[0]) ** (k - 2), "--", label="C * (lambda_2/lambda_1)^k")
 plt.title("Power iteration converges geometrically at rate lambda_2/lambda_1 = 0.4")
 plt.xlabel("iteration k"); plt.ylabel("error in eigenvalue estimate"); plt.legend(); plt.show()
 """)
 
 nb.md(r"""
 The error falls by a factor of $0.4 = \lambda_2/\lambda_1$ per step until it hits
-floating-point precision near $10^{-16}$. If the two largest eigenvalues were close
-(ratio 0.99) the same picture would need hundreds of iterations — the *gap* controls the speed.
+floating-point precision near $10^{-16}$. (The very first estimate happens to be exact:
+$Ae_1 = (4, 2) \propto (2, 1)$, whose Rayleigh quotient is exactly $5$, so the point at $k = 1$
+is missing from the log plot.) If the two largest eigenvalues were close (ratio 0.99) the same
+picture would need thousands of iterations — $0.99^k$ reaches $10^{-14}$ only at
+$k \approx 3{,}200$. The *gap* controls the speed.
 
 ### A two-state Markov chain
 
@@ -186,7 +211,7 @@ for month in range(1, 11):
 
 # A^k via the diagonalisation: P D^k P^-1  equals the direct matrix power
 D = np.diag(w_T.real)
-Tk_diag = P.real @ np.diag(w_T.real ** 10) @ np.linalg.inv(P.real)
+Tk_diag = P.real @ np.linalg.matrix_power(D, 10) @ np.linalg.inv(P.real)
 print("\nmax |P D^10 P^-1 - T^10| =", np.abs(Tk_diag - np.linalg.matrix_power(T, 10)).max())
 print("0.4^10 =", 0.4 ** 10, " -> the second eigenvalue is the speed of forgetting")
 """)
@@ -220,6 +245,8 @@ for j, outs in links.items():
 d = 0.85
 G = d * M + (1 - d) / n * np.ones((n, n))
 print("columns of G sum to one:", np.allclose(G.sum(axis=0), 1))
+w_G, V_G = np.linalg.eig(G)
+lam2 = np.sort(np.abs(w_G))[-2]             # the actual convergence rate
 
 x = np.ones(n) / n
 for k in range(1, 200):
@@ -228,31 +255,98 @@ for k in range(1, 200):
         break
     x = x_new
 pagerank = x_new
-print(f"converged in {k} iterations (0.85^{k} = {0.85**k:.1e})")
+print(f"converged in {k} iterations (bound {d:g}^{k} = {d**k:.1e};"
+      f" actual rate |lambda_2| = {lam2:.3f}, {lam2:.3f}^{k} = {lam2**k:.1e})")
 print("PageRank:", pagerank, " sum =", pagerank.sum())
 print("ranking (best first):", np.argsort(-pagerank))
 
 # cross-check with the eigenvector for eigenvalue 1
-w_G, V_G = np.linalg.eig(G)
 v1 = V_G[:, np.argmin(np.abs(w_G - 1))].real
 print("max |power iteration - eig| =", np.abs(pagerank - v1 / v1.sum()).max())
-print("second-largest |eigenvalue| of G = %.3f  (<= d = %.2f)" % (np.sort(np.abs(w_G))[-2], d))
+lam2_M = np.sort(np.abs(np.linalg.eigvals(M)))[-2]
+print("second-largest |eigenvalue| of G = %.3f = d * |lambda_2(M)| = %.2f * %.4f  (<= d)"
+      % (lam2, d, lam2_M))
 
+in_links = [[j for j, outs in links.items() if i in outs] for i in range(n)]
+plt.figure(figsize=(8, 4.2))
 plt.bar(range(n), pagerank, color="tab:blue")
-plt.title("PageRank of a six-page web (d = 0.85)")
-plt.xlabel("page"); plt.ylabel("stationary probability"); plt.show()
+for i, v in enumerate(pagerank):
+    plt.text(i, v + 0.005, f"{v:.3f}", ha="center")
+plt.axhline((1 - d) / n, color="gray", ls=":", label=f"teleportation floor (1-d)/n = {(1 - d) / n:.3f}")
+plt.xticks(range(n), [f"page {i}\n<- {', '.join(map(str, l)) or 'none'}" for i, l in enumerate(in_links)])
+plt.ylim(0, 0.4)
+plt.title(f"PageRank of a six-page web (d = {d:g})")
+plt.xlabel("page, with the pages that link to it (dead-end page 5 links to all)")
+plt.ylabel("stationary probability"); plt.legend(); plt.tight_layout(); plt.show()
 """)
 
 nb.md(r"""
 Pages 2 and 0 share the top with about 35 % each. Page 2 is linked to by three pages (0, 1
-and 3); page 0 is linked to by *one* page only — but that page is page 2, the most important
-one, and it sends page 0 its entire out-link weight. That is the whole idea of PageRank: a
-link is worth what its source is worth. Pages 3, 4 and 5 are linked to from nobody or only
-from the weak page 4, so they live mostly on the teleportation term $(1-d)/n$.
+and 3). Page 0 is linked to by only two pages, 2 and the weak page 3 — but page 2 is the most
+important page and sends page 0 its entire out-link weight. That is the whole idea of
+PageRank: a link is worth what its source is worth. Pages 3, 4 and 5 are linked to from
+nobody or only from the weak page 4, so they live mostly on the teleportation floor
+$(1-d)/n = 0.025$ (the dotted line). Page 4, which nobody links to, sits a little above it at
+0.031 because the dead-end page 5 spreads its rank over every page:
+$0.025 + 0.85 \cdot 0.0446/6 = 0.031$.
 
-**Try it yourself:** set `d = 0.5` and then `d = 0.99`. Convergence speeds up or slows down
-with $d$, and as $d \to 1$ the loop 0→1→2→0 soaks up almost all of the probability mass while
-the dead-end page 5 and its only referrer, page 4, drop towards zero.
+How fast do the two chains of this section forget where they started, and how does the
+damping factor $d$ reshape the ranking? Both questions are about eigenvalues.
+""")
+
+nb.code(r"""
+# convergence of the two chains, and PageRank as a function of the damping d
+x_T, x_G = np.array([0., 1.]), np.eye(n)[5]          # brands: all start with B; surfer starts on page 5
+dist_T, dist_G = [], []
+for _ in range(40):
+    x_T, x_G = T @ x_T, G @ x_G
+    dist_T.append(np.abs(x_T - pi).sum()); dist_G.append(np.abs(x_G - pagerank).sum())
+dist_T, dist_G = np.array(dist_T), np.array(dist_G)
+ks_c = np.arange(1, 41)
+
+ds = np.linspace(0.05, 0.99, 48)
+pr_d = []
+for d_ in ds:
+    w_, V_ = np.linalg.eig(d_ * M + (1 - d_) / n * np.ones((n, n)))
+    v_ = V_[:, np.argmax(w_.real)].real               # eigenvector for eigenvalue 1
+    pr_d.append(v_ / v_.sum())
+pr_d = np.array(pr_d)
+print("PageRank at d = 0.99:", pr_d[-1])
+print("pages 3 and 5 coincide for every d:", np.allclose(pr_d[:, 3], pr_d[:, 5]))
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
+ax = axes[0]
+ax.semilogy(ks_c, dist_T, "o", ms=4, color="tab:blue", label="brand chain T")
+ax.semilogy(ks_c, dist_T[0] * 0.4 ** (ks_c - 1), "-", color="tab:blue", lw=1, label="slope 0.4 = lambda_2(T)")
+ax.semilogy(ks_c, dist_G, "s", ms=4, color="tab:orange", label="PageRank chain G")
+ax.semilogy(ks_c, dist_G[9] * lam2 ** (ks_c - 10), "-", color="tab:orange", lw=1,
+            label=f"slope {lam2:.3f} = |lambda_2(G)|")
+ax.semilogy(ks_c, dist_G[0] * d ** (ks_c - 1), "k--", lw=1, label=f"guaranteed bound d^k = {d:g}^k")
+ax.set_ylim(1e-17, 3)
+ax.set_title("Distance to the stationary vector shrinks like |lambda_2|^k")
+ax.set_xlabel("step k"); ax.set_ylabel("L1 distance to stationary distribution"); ax.legend(fontsize=8)
+ax = axes[1]
+for p in range(n):
+    ax.plot(ds, pr_d[:, p], "--" if p == 5 else "-", lw=2 if p == 5 else 1.5, label=f"page {p}")
+ax.axvline(d, color="gray", ls=":", lw=1)
+ax.text(d - 0.01, 0.25, f"d = {d:g}", color="gray", ha="right")
+ax.set_title("PageRank of each page vs damping d")
+ax.set_xlabel("damping factor d"); ax.set_ylabel("PageRank"); ax.legend(fontsize=8, ncol=2)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** each chain forgets its start at the rate of its own second eigenvalue: $0.4$
+for the brands, and $|\lambda_2(G)| = 0.601$ for PageRank, which beats its guaranteed $0.85^k$
+comfortably because $\lambda_2(G) = d\,\lambda_2(M)$ and here $|\lambda_2(M)| = 1/\sqrt2$. On the
+right, as $d \to 1$ the loop 0→1→2→0 absorbs almost all the mass while pages 3, 4 and 5 sink
+to $0.002$–$0.003$; as $d \to 0$ every page tends to the uniform $1/6$. Pages 3 and 5 coincide
+for every $d$ (the dashed page-5 line is drawn on top of page 3's), because each gets exactly half of page 4's
+links.
+
+**Try it yourself:** set `d = 0.5` and then `d = 0.99` in the PageRank cell and compare the
+iteration counts (53 at $d = 0.85$) with the prediction $\log(10^{-12}) / \log(d/\sqrt2)$: the
+speed is set by $|\lambda_2(G)| = d/\sqrt2$, not by the worst-case bound $d^k$.
 """)
 
 # ---------------------------------------------------------------- Section 3
@@ -326,8 +420,54 @@ print("Rayleigh quotients: min %.4f, max %.4f;  eigenvalues: min %.4f, max %.4f"
 
 nb.md(r"""
 The random Rayleigh quotients stay strictly inside $[\lambda_{\min}, \lambda_{\max}]$ and
-never quite reach the ends — the extremes are attained only *at* the eigenvectors. That
-"maximise $w^\top C w$ over unit $w$" problem is exactly what PCA solves in Section 6.
+never quite reach the ends — the extremes are attained only *at* the eigenvectors. To see
+the whole landscape, walk a unit vector $u$ half-way around the circle (0° to 180°; $-u$ gives the same value as $u$) for the $2\times2$ matrix
+$S$, and look at where the 10,000 random quotients of $S_5$ actually fall.
+""")
+
+nb.code(r"""
+ang = np.linspace(0, 180, 361)
+units = np.vstack([np.cos(np.radians(ang)), np.sin(np.radians(ang))])
+R_ang = np.einsum("ij,ik,kj->j", units, S, units)        # u^T S u for every unit vector u
+span = lam5.max() - lam5.min()
+print("u^T S u: max %.4f at %g deg, min %.4f at %g deg"
+      % (R_ang.max(), ang[np.argmax(R_ang)], R_ang.min(), ang[np.argmin(R_ang)]))
+print("mean random Rayleigh quotient %.3f  vs  tr(S5)/5 = %.3f" % (rq.mean(), np.trace(S5) / 5))
+print("share of random directions within 5%% of the range from lambda_max: %.2f%%"
+      % (100 * np.mean(rq > lam5.max() - 0.05 * span)))
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
+ax = axes[0]
+ax.plot(ang, R_ang, color="tab:purple", label="R(u) = u^T S u")
+ax.axhline(lam[0], color="tab:red", ls="--", lw=1, label="lambda_max = 3")
+ax.axhline(lam[1], color="tab:blue", ls="--", lw=1, label="lambda_min = 1")
+ax.plot([45, 135], [3, 1], "ko")
+ax.annotate("u = q1 (45 deg)", (45, 3), xytext=(55, 2.75))
+ax.annotate("u = q2 (135 deg)", (135, 1), xytext=(92, 1.15))
+ax.set_title("u^T S u around the unit circle, S = [[2,1],[1,2]]")
+ax.set_xlabel("angle of the unit vector u (degrees)"); ax.set_ylabel("u^T S u")
+ax.legend(loc="lower left", fontsize=8)
+ax = axes[1]
+ax.hist(rq, bins=60, color="lightgray", edgecolor="gray")
+ax.axvline(lam5.min(), color="tab:red", ls="--", lw=1.5, label="lambda_min, lambda_max")
+ax.axvline(lam5.max(), color="tab:red", ls="--", lw=1.5)
+for l_ in lam5[1:-1]:
+    ax.axvline(l_, color="tab:blue", ls=":", lw=1.5, label="other eigenvalues" if l_ == lam5[1] else None)
+ax.axvline(np.trace(S5) / 5, color="k", lw=1.2, label="average eigenvalue tr(S5)/5")
+ax.set_title("10,000 random directions: Rayleigh quotients of S5")
+ax.set_xlabel("Rayleigh quotient x^T S5 x / x^T x"); ax.set_ylabel("count")
+ax.legend(fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** $u^\top S u = 2 + \sin 2\theta$ peaks at exactly $\lambda_{\max} = 3$ when $u$
+points along $q_1$ (45°) and bottoms out at $\lambda_{\min} = 1$ along $q_2$ (135°): maximising
+the Rayleigh quotient *is* finding the top eigenvector, and that "maximise $w^\top C w$ over
+unit $w$" problem is exactly what PCA solves in Section 6. In five dimensions the random
+directions pile up around the average eigenvalue $\operatorname{tr}(S_5)/5 \approx 3.3$, and
+only about 0.2 % land within 5 % of $\lambda_{\max}$ — random search is a hopeless way to find
+an eigenvector.
 """)
 
 # ---------------------------------------------------------------- Section 4
@@ -391,29 +531,44 @@ rank, which is how one decides how many components to keep.
 nb.code(r"""
 m, n_cols, r_true = 60, 40, 3
 L = rng.normal(size=(m, r_true)) @ rng.normal(size=(r_true, n_cols))   # exact rank 3
-noise = 0.3 * rng.normal(size=(m, n_cols))
+tau = 0.3                                              # noise standard deviation
+noise = tau * rng.normal(size=(m, n_cols))
 s_clean = np.linalg.svd(L, compute_uv=False)
 s_noisy = np.linalg.svd(L + noise, compute_uv=False)
 print("rank of L:", np.linalg.matrix_rank(L), "   rank of L + noise:", np.linalg.matrix_rank(L + noise))
 print("first 6 singular values, clean:", s_clean[:6])
 print("first 6 singular values, noisy:", s_noisy[:6])
 
-plt.semilogy(np.arange(1, 41), s_clean + 1e-16, "o-", label="exact rank-3 matrix")
-plt.semilogy(np.arange(1, 41), s_noisy, "s-", label="rank-3 + noise (sd 0.3)")
-plt.title("Scree plot: singular values of a 60 x 40 matrix")
-plt.xlabel("index i"); plt.ylabel("sigma_i (log scale)"); plt.legend(); plt.show()
+noise_level = tau * (np.sqrt(m) + np.sqrt(n_cols))     # largest singular value of pure noise, roughly
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
+ax = axes[0]
+ax.semilogy(np.arange(1, 41), s_clean + 1e-16, "o-", ms=4, label="exact rank-3 matrix")
+ax.semilogy(np.arange(1, 41), s_noisy, "s-", ms=4, label=f"rank-3 + noise (sd {tau:g})")
+ax.axhline(noise_level, color="gray", ls=":", label=f"noise rule of thumb = {noise_level:.1f}")
+ax.set_title("Scree plot: singular values of a 60 x 40 matrix")
+ax.set_xlabel("index i"); ax.set_ylabel("sigma_i (log scale)"); ax.legend(fontsize=8)
+ax = axes[1]
+ax.plot(np.arange(1, 11), s_noisy[:10], "s-", color="tab:orange", label=f"rank-3 + noise (sd {tau:g})")
+ax.axhline(noise_level, color="gray", ls=":", label="%g (sqrt 60 + sqrt 40) = %.1f" % (tau, noise_level))
+ax.set_xticks(range(1, 11))
+ax.set_title("The first ten noisy singular values, linear axis")
+ax.set_xlabel("index i"); ax.set_ylabel("sigma_i"); ax.legend(fontsize=8)
+plt.tight_layout(); plt.show()
 """)
 
 nb.md(r"""
 The clean matrix has three large singular values and the rest are at the level of rounding
-error ($10^{-14}$ — `matrix_rank` correctly says 3). With noise, every singular value is
-non-zero (`matrix_rank` now says 40), but the plot still shows a cliff: $\sigma_3 \approx 35$
-against $\sigma_4 \approx 4$. The largest singular value of a pure-noise matrix with entries
-of standard deviation $\tau$ is roughly $\tau(\sqrt{m} + \sqrt{n})$ — here
-$0.3\,(\sqrt{60} + \sqrt{40}) \approx 4.2$ — a useful rule of thumb for deciding whether a
-singular value is "signal".
+error ($10^{-14}$ — `matrix_rank` correctly says 3); on the log axis those rounding-level
+values stretch the picture over many decades. With noise, every singular value is non-zero
+(`matrix_rank` now says 40), but there is still a cliff: $\sigma_3 \approx 35$ against
+$\sigma_4 \approx 4$, plain to see on the linear axis on the right. The largest singular value
+of a pure-noise matrix with entries of standard deviation $\tau$ is roughly
+$\tau(\sqrt{m} + \sqrt{n})$ — here $0.3\,(\sqrt{60} + \sqrt{40}) \approx 4.2$, the dotted
+line — a useful rule of thumb for deciding whether a singular value is "signal": three values
+stand far above it, and the rest start just below it ($\sigma_4 \approx 3.9$) and decline
+slowly to about $0.6$, with no second cliff.
 
-**Try it yourself:** raise the noise standard deviation to `1.5`. At what level does the
+**Try it yourself:** raise the noise standard deviation `tau` to `1.5`. At what level does the
 cliff disappear, so that the true rank is no longer readable from the plot?
 """)
 
@@ -436,22 +591,26 @@ img = 0.3 * xx / 63 + 0.2 * yy / 63                       # smooth gradient (ran
 img = img + 0.6 * (((xx - 42) ** 2 + (yy - 22) ** 2) < 12 ** 2)   # a disc
 img[12:52, 8:16] += 0.5                                    # a vertical bar
 img = img + 0.12 * np.sin((xx + yy) / 4.0)                 # diagonal stripes (rank 2)
+img_clean = img.copy()                                     # kept to measure denoising later
 img = img + 0.02 * rng.normal(size=img.shape)              # a little sensor noise
 
 U, s, Vt = np.linalg.svd(img)
 def rank_k(U, s, Vt, k):
     return (U[:, :k] * s[:k]) @ Vt[:k]
 
-ks = [1, 2, 5, 10, 20]
-fig, axes = plt.subplots(2, 3, figsize=(11, 7.5))
+ks = [1, 2, 5, 10, 12, 20]
+fig, axes = plt.subplots(2, 4, figsize=(11, 6.2))
 axes = axes.ravel()
-axes[0].imshow(img, cmap="gray"); axes[0].set_title("original (rank %d)" % np.linalg.matrix_rank(img))
-for ax, k in zip(axes[1:], ks):
+axes[0].imshow(img_clean, cmap="gray", vmin=img.min(), vmax=img.max())
+axes[0].set_title("clean, no noise (rank %d)" % np.linalg.matrix_rank(img_clean))
+axes[1].imshow(img, cmap="gray", vmin=img.min(), vmax=img.max())
+axes[1].set_title("noisy original (rank %d)" % np.linalg.matrix_rank(img))
+for ax, k in zip(axes[2:], ks):
     ax.imshow(rank_k(U, s, Vt, k), cmap="gray", vmin=img.min(), vmax=img.max())
     ax.set_title(f"rank {k}: {k * (64 + 64 + 1) / 64**2:.0%} of storage")
 for ax in axes:
     ax.set_xlabel("column"); ax.set_ylabel("row"); ax.set_xticks([]); ax.set_yticks([])
-fig.suptitle("Truncated-SVD compression of a 64 x 64 image"); plt.tight_layout(); plt.show()
+fig.suptitle("Truncated-SVD compression of the noisy 64 x 64 image"); plt.tight_layout(); plt.show()
 """)
 
 nb.code(r"""
@@ -471,12 +630,51 @@ plt.xlabel("rank k"); plt.ylabel("relative Frobenius error"); plt.legend(); plt.
 """)
 
 nb.md(r"""
-Rank 1 is a blur of row and column averages; rank 5 shows every shape; rank 10 is visually
-indistinguishable from the original at 31 % of the storage. The measured error curve sits
+Rank 1 is a blur of row and column averages; by rank 5 every shape is recognisable; rank 10
+already shows every shape (with faint dark notches at the four diagonal corners of the disc's rim) at 31 % of the
+storage, and rank 12 looks like the clean picture at 38 %. The measured error curve sits
 exactly on the Eckart–Young formula — the theorem is not an approximation. The clean image
-has rank 12 (a gradient of rank 2, stripes of rank 2, a disc and a bar), so the singular
-values beyond the twelfth are pure sensor noise; the error curve bends at $k \approx 12$ and
-then declines slowly, and truncating there actually *denoises* the picture.
+has rank 12 (a gradient of rank 2, stripes of rank 2, a disc of rank 7, because its rows take
+seven different widths, and a bar of rank 1), so the singular values beyond the twelfth are
+pure sensor noise; the error curve bends at $k \approx 12$ and then declines slowly. That
+suggests truncating there actually *denoises* the picture. We kept the clean image, so we can
+measure it.
+""")
+
+nb.code(r"""
+err_noisy = measured / np.linalg.norm(img)
+err_clean = np.array([np.linalg.norm(img_clean - rank_k(U, s, Vt, k)) for k in ks_all]) / np.linalg.norm(img_clean)
+floor = 0.02 * (np.sqrt(64) + np.sqrt(64))          # tau (sqrt m + sqrt n): top singular value of pure noise
+k_best = int(ks_all[np.argmin(err_clean)])
+print("singular values above the noise level %.2f: %d   (sigma_12 = %.3f, sigma_13 = %.3f)"
+      % (floor, (s > floor).sum(), s[11], s[12]))
+print("relative error to the CLEAN image: k = 10: %.4f,  k = %d (best): %.4f,  k = 20: %.4f,"
+      "  noisy image itself: %.4f" % (err_clean[9], k_best, err_clean.min(), err_clean[19], err_clean[-1]))
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
+ax = axes[0]
+ax.semilogy(ks_all, s, "o", ms=3, label="sigma_i of the noisy image")
+ax.axhline(floor, color="tab:red", ls="--", label="noise level 0.02 (sqrt 64 + sqrt 64) = 0.32")
+ax.axvline(12.5, color="gray", ls=":", label="rank of the clean image = 12")
+ax.set_title("Twelve singular values stand above the noise")
+ax.set_xlabel("index i"); ax.set_ylabel("sigma_i (log scale)"); ax.legend(fontsize=8)
+ax = axes[1]
+ax.plot(ks_all, err_noisy, "-", label="error vs the noisy image (Eckart-Young)")
+ax.plot(ks_all, err_clean, "-", label="error vs the CLEAN image")
+ax.plot(k_best, err_clean.min(), "k*", ms=12, label=f"best k = {k_best}")
+ax.axhline(err_clean[-1], color="gray", ls=":", label="noisy image itself (k = 64)")
+ax.set_xlim(0, 40); ax.set_ylim(0, 0.15)
+ax.set_title("Truncation denoises: the error to the truth is U-shaped")
+ax.set_xlabel("rank k"); ax.set_ylabel("relative Frobenius error"); ax.legend(fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** exactly twelve singular values stand above the noise level $0.32$, matching
+the clean rank, and that the error to the *clean* image is smallest at $k = 12$ (2.8 %), well
+below the 4.6 % of the noisy original itself: every extra component adds back more noise than
+signal. Eckart–Young measures the distance to the data you have; denoising needs the distance
+to the data you wish you had.
 """)
 
 # ---------------------------------------------------------------- Section 6
@@ -541,9 +739,10 @@ plt.legend(); plt.show()
 
 nb.md(r"""
 All three routes give the same numbers: PC1 carries 92.5 % of the variance and PC2 another
-5.3 %, so the 2-D picture keeps 97.8 % of the spread of the 4-D cloud. The loadings of PC1
-are all the same sign and largest on petal length: the first component is essentially
-"overall flower size". The three species separate well on PC1 — but remember PCA never saw
+5.3 %, so the 2-D picture keeps 97.8 % of the spread of the 4-D cloud. Three of the four
+loadings of PC1 share a sign (sepal width has a small opposite loading, $-0.08$) and the
+largest by far is petal length ($0.86$): the first component is mostly "petal size", the
+measurement that varies most. The three species separate well on PC1 — but remember PCA never saw
 the labels; it found the direction of largest *variance*, which here happens to coincide with
 species.
 
@@ -570,9 +769,39 @@ print("(the same as standardising the original cm data:", np.allclose(
 """)
 
 nb.md(r"""
-With one badly scaled feature, "PC1 explains 99.99999 % of the variance" — and it is just
+With one badly scaled feature, "PC1 explains 99.9999999 % of the variance" — and it is just
 that feature. Standardising restores a sensible split (73 %, 23 %, ...) that does not depend
-on the units anyone chose. When features have different units, standardise first.
+on the units anyone chose. When features have different units, standardise first. Here are
+the loadings and the variance shares of all three versions side by side.
+""")
+
+nb.code(r"""
+versions = {"cm (raw)": X, "petal length in micrometres": X_bad, "standardised": X_std}
+feat = ["sepal len", "sepal wid", "petal len", "petal wid"]
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
+wbar = 0.27
+for j, (name, data_) in enumerate(versions.items()):
+    p_ = PCA().fit(data_)
+    c_ = p_.components_[0] * np.sign(p_.components_[0][2])   # fix the arbitrary sign: petal length > 0
+    print(f"{name:28s} PC1 loadings {np.round(c_, 2)}   variance ratios {np.round(p_.explained_variance_ratio_, 3)}")
+    axes[0].bar(np.arange(4) + (j - 1) * wbar, c_, wbar, label=name)
+    axes[1].bar(np.arange(1, 5) + (j - 1) * wbar, p_.explained_variance_ratio_, wbar, label=name)
+axes[0].axhline(0, color="k", lw=0.8)
+axes[0].set_xticks(range(4)); axes[0].set_xticklabels(feat)
+axes[0].set_title("Loadings of PC1"); axes[0].set_xlabel("feature"); axes[0].set_ylabel("loading")
+axes[0].legend(fontsize=8)
+axes[1].set_xticks(range(1, 5))
+axes[1].set_title("Explained variance ratio per component")
+axes[1].set_xlabel("component"); axes[1].set_ylabel("fraction of total variance"); axes[1].legend(fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** in micrometres PC1 is the petal-length axis alone (loading 1, everything else
+0) and takes all the variance. After standardising, PC1 weighs sepal length, petal length and
+petal width almost equally (0.52–0.58) and PC2 earns a real 23 % share. Sepal width has the
+opposite sign to the other three in every version (in micrometres its loading is merely too
+small to see).
 
 **Try it yourself:** compute the cumulative explained variance `np.cumsum(evr_std)` and find
 the smallest $k$ that captures 99 %. Then repeat for `load_wine()` (13 features) — how many
@@ -625,7 +854,43 @@ The third singular value is zero (up to rounding), so $X^\top X$ cannot be inver
 `pinv_svd` simply skips that direction and returns the shortest coefficient vector that fits
 the data. Adding any multiple of the null-space direction $(32, 1.8, -1)$ leaves every
 prediction unchanged and only makes the coefficients longer. That is why `np.linalg.lstsq`
-and `sklearn.linear_model.LinearRegression` are SVD-based.
+and `sklearn.linear_model.LinearRegression` are SVD-based. Let's walk along that null-space
+direction and watch the fit and the length.
+""")
+
+nb.code(r"""
+ts_ = np.linspace(-1, 1, 201)
+norms_ = np.array([np.linalg.norm(coef_min + t_ * null_dir) for t_ in ts_])
+resid_ = np.array([np.linalg.norm(Xd @ (coef_min + t_ * null_dir) - hardness) for t_ in ts_])
+print("coef_min . null_dir = %.1e  (orthogonal)" % (coef_min @ null_dir))
+print("residual along the whole path: min %.4f, max %.4f" % (resid_.min(), resid_.max()))
+print("norm at t = 0: %.4f,  t = 0.5: %.4f,  ||null_dir|| = %.2f"
+      % (np.linalg.norm(coef_min), np.linalg.norm(coef_other), np.linalg.norm(null_dir)))
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
+ax = axes[0]
+ax.scatter(celsius, hardness, color="k", zorder=3, label="data")
+ax.plot(celsius, Xd @ coef_min, "-", lw=5, alpha=0.4, label=f"coef_min (norm {np.linalg.norm(coef_min):.2f})")
+ax.plot(celsius, Xd @ coef_other, "--", color="tab:red",
+        label=f"coef_min + 0.5 null_dir (norm {np.linalg.norm(coef_other):.2f})")
+ax.set_title("Two coefficient vectors, one fitted line")
+ax.set_xlabel("temperature (Celsius)"); ax.set_ylabel("hardness"); ax.legend(fontsize=8)
+ax = axes[1]
+ax.plot(ts_, norms_, label="||coefficients||")
+ax.plot(ts_, resid_, "--", label="residual ||X c - y||  (unchanged)")
+ax.plot([0, 0.5], [np.linalg.norm(coef_min), np.linalg.norm(coef_other)], "ko",
+        label="the two vectors on the left")
+ax.set_title("Moving along the null space: same fit, longer vector")
+ax.set_xlabel("t in  c = coef_min + t * (32, 1.8, -1)"); ax.set_ylabel("Euclidean norm")
+ax.legend(fontsize=8, loc="upper center")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the two fitted lines are indistinguishable and the residual stays at $1.82$
+for every $t$, while the coefficient norm grows like $\sqrt{2.51^2 + t^2 \cdot 32.07^2}$:
+`coef_min` is orthogonal to the null-space direction, so Pythagoras puts the pseudo-inverse
+solution at the bottom of the valley.
 
 **Ridge regression** softens the hard cut-off: instead of $1/\sigma_i$ (or $0$) it uses the
 filter $\sigma_i/(\sigma_i^2 + \lambda)$, which leaves large singular values alone and
@@ -634,11 +899,16 @@ shrinks small ones towards zero.
 
 nb.code(r"""
 sig = np.logspace(-2, 2, 200)
-for lam_ridge in [0.01, 1.0, 100.0]:
+plt.figure(figsize=(9.5, 4))
+plt.axhline(0.5, color="lightgray", lw=0.8)
+lams_ridge = [0.01, 1.0, 100.0]
+for lam_ridge in lams_ridge:
     plt.semilogx(sig, sig ** 2 / (sig ** 2 + lam_ridge), label=f"lambda = {lam_ridge:g}")
 plt.axhline(1.0, color="gray", ls=":", label="pseudo-inverse (lambda = 0)")
+plt.plot(np.sqrt(lams_ridge), [0.5] * 3, "ko", label="factor 1/2 at sigma = sqrt(lambda)")
 plt.title("Ridge filter factors sigma^2 / (sigma^2 + lambda)")
-plt.xlabel("singular value sigma_i"); plt.ylabel("fraction of the OLS component kept"); plt.legend(); plt.show()
+plt.xlabel("singular value sigma_i"); plt.ylabel("fraction of the OLS component kept")
+plt.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9); plt.tight_layout(); plt.show()
 print("A direction with sigma = 0.1 and lambda = 1 keeps only %.1f%% of its OLS coefficient."
       % (100 * 0.1 ** 2 / (0.1 ** 2 + 1)))
 """)
@@ -646,7 +916,9 @@ print("A direction with sigma = 0.1 and lambda = 1 keeps only %.1f%% of its OLS 
 nb.md(r"""
 Directions with $\sigma_i^2 \gg \lambda$ pass unchanged; directions with $\sigma_i^2 \ll
 \lambda$ — the ones the data barely constrain and that amplify noise most — are nearly
-removed. Module 13 derives this and shows why it reduces variance.
+removed. Each curve passes $1/2$ exactly at $\sigma = \sqrt\lambda$ (the black dots), so
+$\sqrt\lambda$ is where ridge draws its soft line. Module 13 derives this and shows why it
+reduces variance.
 """)
 
 # ---------------------------------------------------------------- Section 8
@@ -673,33 +945,41 @@ def matrix_with_condition(n, kappa):
 
 n = 8
 kappas = np.logspace(0, 8, 9)
-amp_random, amp_worst = [], []
+rng_amp = np.random.default_rng(1)                 # its own generator for the 30 random trials per kappa
+amp_med, amp_lo, amp_hi, amp_worst = [], [], [], []
 for kappa in kappas:
     A_k, U, V, s = matrix_with_condition(n, kappa)
-    # random perturbation of a random right-hand side
-    x_true = rng.normal(size=n); b = A_k @ x_true
-    db = rng.normal(size=n); db = 1e-8 * np.linalg.norm(b) * db / np.linalg.norm(db)
-    x_pert = np.linalg.solve(A_k, b + db)
-    amp_random.append((np.linalg.norm(x_pert - x_true) / np.linalg.norm(x_true)) / 1e-8)
+    # 30 random right-hand sides, each perturbed in a random direction by one part in 1e8
+    amps = []
+    for _ in range(30):
+        x_true = rng_amp.normal(size=n); b = A_k @ x_true
+        db = rng_amp.normal(size=n); db = 1e-8 * np.linalg.norm(b) * db / np.linalg.norm(db)
+        x_pert = np.linalg.solve(A_k, b + db)
+        amps.append((np.linalg.norm(x_pert - x_true) / np.linalg.norm(x_true)) / 1e-8)
+    amp_med.append(np.median(amps))
+    amp_lo.append(np.percentile(amps, 10)); amp_hi.append(np.percentile(amps, 90))
     # worst case: b along u_1 (strong direction), db along u_n (weak direction)
     b_w = U[:, 0]; db_w = 1e-8 * U[:, -1]
     x_w = np.linalg.solve(A_k, b_w); x_wp = np.linalg.solve(A_k, b_w + db_w)
     amp_worst.append((np.linalg.norm(x_wp - x_w) / np.linalg.norm(x_w)) / 1e-8)
-    print(f"kappa = {kappa:9.0e}:  np.linalg.cond = {np.linalg.cond(A_k):9.2e},"
-          f"  amplification random {amp_random[-1]:9.2e},  worst case {amp_worst[-1]:9.2e}")
+    print(f"kappa = {kappa:7.0e}:  np.linalg.cond = {np.linalg.cond(A_k):8.2e},"
+          f"  amplification random (median of 30) {amp_med[-1]:8.2e},  worst case {amp_worst[-1]:8.2e}")
 
+plt.figure(figsize=(8, 4.4))
 plt.loglog(kappas, amp_worst, "o-", label="worst-case direction")
-plt.loglog(kappas, amp_random, "s-", label="random direction")
+plt.fill_between(kappas, amp_lo, amp_hi, color="tab:orange", alpha=0.2, label="random: 10-90 % range of 30")
+plt.loglog(kappas, amp_med, "s-", color="tab:orange", label="random direction (median of 30)")
 plt.loglog(kappas, kappas, "k--", label="bound: amplification = kappa")
 plt.title("Error amplification when solving Ax = b vs condition number")
 plt.xlabel("condition number kappa"); plt.ylabel("(relative error in x) / (relative error in b)")
-plt.legend(); plt.show()
+plt.legend(); plt.tight_layout(); plt.show()
 """)
 
 nb.md(r"""
 The worst-case amplification sits exactly on the line $\kappa$ — the bound is tight. Random
-perturbations do less damage but still grow with $\kappa$: with $\kappa = 10^8$ a change in
-the eighth decimal of $b$ moves $x$ in the first decimal. Rule of thumb: you lose
+perturbations do less damage — once $\kappa \ge 10^3$ the median of 30 trials sits roughly
+10 to 25 times below the bound — but they still grow in proportion to $\kappa$: with $\kappa = 10^8$ a change in the
+eighth decimal of $b$ can move $x$ in the first decimal. Rule of thumb: you lose up to
 $\log_{10}\kappa$ digits.
 
 ### Why ill-conditioning slows gradient descent
@@ -730,14 +1010,45 @@ for k_, s_, p_ in zip(kappas_gd, steps, predicted):
 
 plt.loglog(kappas_gd, steps, "o-", label="measured steps")
 plt.loglog(kappas_gd, predicted, "--", label="log(1e-3) / log((kappa-1)/(kappa+1))")
-plt.title("Gradient descent needs ~ kappa steps per factor of e")
+plt.title("Gradient descent needs ~ kappa/2 steps per factor of e")
 plt.xlabel("condition number kappa"); plt.ylabel("steps to reduce error 1000x"); plt.legend(); plt.show()
 """)
 
 nb.md(r"""
 The step count grows linearly with $\kappa$: ten times worse conditioning, ten times more
-iterations. Module 05 shows how momentum and Adam attack this; the cheapest fix of all is to
-make $\kappa$ small in the first place by **scaling the features**.
+iterations. Since $\log\frac{\kappa+1}{\kappa-1} \approx 2/\kappa$, each factor of $e$ costs
+about $\kappa/2$ steps, and three digits cost about $\tfrac{\kappa}{2}\ln 1000 \approx
+3.45\,\kappa$ steps. Where do all those steps go? Draw the iterates on the level sets of the
+same quadratic.
+""")
+
+nb.code(r"""
+g1, g2 = np.meshgrid(np.linspace(-1.2, 1.2, 200), np.linspace(-1.2, 1.2, 200))
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.8))
+for ax, kap in zip(axes, [3, 30]):
+    eta_ = 2 / (1 + kap)                                   # the same optimal step as above
+    path = [np.array([1., 1.])]
+    for _ in range(15):
+        path.append(path[-1] - eta_ * np.array([1., kap]) * path[-1])
+    path = np.array(path)
+    print(f"kappa = {kap:2d}: point after 15 steps = {path[-1]},  ratio per step = {(kap - 1) / (kap + 1):.4f}")
+    ax.contour(g1, g2, 0.5 * (g1 ** 2 + kap * g2 ** 2), levels=12, colors="lightgray")
+    ax.plot(path[:, 0], path[:, 1], "o-", color="tab:blue", ms=3, lw=1, label="GD iterates (15 steps)")
+    ax.plot(0, 0, "k*", ms=12, label="minimum")
+    ax.set_aspect("equal"); ax.set_xlim(-1.2, 1.2); ax.set_ylim(-1.2, 1.2)
+    ax.set_title(f"kappa = {kap}: error x {(kap - 1) / (kap + 1):.2f} per step")
+    ax.set_xlabel("x1 (eigenvalue 1)"); ax.set_ylabel(f"x2 (eigenvalue {kap})")
+    ax.legend(loc="lower left", fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** with $\kappa = 3$ the iterates reach the minimum in a handful of steps, while
+with $\kappa = 30$ every step overshoots across the steep $x_2$ direction and the error shrinks
+only by $29/31 \approx 0.94$ per step, so after 15 steps the point is still at $x_1 \approx 0.37$.
+The zig-zag is the step-count table above, drawn. Module 05 shows how momentum and Adam attack
+this; the cheapest fix of all is to make $\kappa$ small in the first place by **scaling the
+features**.
 """)
 
 nb.code(r"""
@@ -793,8 +1104,8 @@ nb.md(r"""
 
 ## Next: open `exercises.ipynb`
 
-Twelve exercises with instant self-checks, from eigenvalues by hand to a latent-factor
-recommender built from truncated SVDs.
+Twelve exercises (nine with instant self-checks, two conceptual questions and a mini-project),
+from eigenvalues by hand to a latent-factor recommender built from truncated SVDs.
 """)
 
 nb.save(MOD / "lesson.ipynb")
@@ -816,7 +1127,7 @@ np.set_printoptions(precision=4, suppress=True)
 ex = ExerciseSet(
     "Module 03 — Exercises",
     intro_md=r"""
-Exercises for **Module 03 — Eigenvalues, SVD and PCA**. They follow the order of the
+Exercises for **Module 03 — Eigenvalues, SVD and PCA**. They roughly follow the
 [concept guide](README.md): eigenvalues by hand, the spectral theorem, truncated SVD, power
 iteration and PageRank, PCA, the pseudo-inverse, conditioning, ridge regression through the
 SVD, two conceptual questions and a mini-project on latent-factor recommendation.
@@ -1098,7 +1409,9 @@ $|\lambda_2/\lambda_1|$. Normalising every step prevents overflow or underflow; 
 quotient $x^\top A x$ of a unit vector then estimates $\lambda_1$ (for symmetric matrices its
 error is the *square* of the vector's error, which is why it converges so fast). Forgetting
 to normalise, or returning `y` instead of `x`, are the usual slips. Power iteration cannot find
-$\lambda_1$ if the start vector is exactly orthogonal to $v_1$ or if $|\lambda_1| = |\lambda_2|$.
+$\lambda_1$ if the start vector has no component along $v_1$ in the eigenvector expansion
+$x_0 = \sum_i c_i v_i$, i.e. $c_1 = 0$ (for a symmetric matrix: if it is orthogonal to $v_1$),
+or if $|\lambda_1| = |\lambda_2|$.
 """,
 )
 
@@ -1183,7 +1496,8 @@ each column must sum to one — including the dead-end column, which the uniform
 Mixing in the teleport matrix $\frac{1-d}{n}\mathbf{1}\mathbf{1}^\top$ makes every entry of
 $G$ positive, so by Perron–Frobenius the stationary vector is unique and power iteration
 converges at least as fast as $d^k$: 200 iterations are far more than needed. Nobody links to
-page 6, so it lives only on teleportation and ranks last. The classic bug is building $M$
+page 6, so it lives almost entirely on teleportation (plus the $1/n$ share of its own dangling
+mass) and ranks last. The classic bug is building $M$
 row-stochastic (rows sum to one) and then multiplying from the wrong side; another is
 forgetting the dangling-page rule, which leaks probability mass out of the chain.
 """,
@@ -1450,7 +1764,7 @@ try:
     amp_worst = amplification(_A, _Q1[:, 0], 1e-6 * _Q1[:, -1])
 except Exception:
     amp_rand = amp_worst = None
-check('random perturbation: amplification <= kappa', amp_rand is not None and 1.0 <= amp_rand <= 1e4 * (1 + 1e-6))
+check('random perturbation: 1/kappa <= amplification <= kappa', amp_rand is not None and 1e-4 * (1 - 1e-6) <= amp_rand <= 1e4 * (1 + 1e-6))
 check_close('worst-case directions: amplification equals kappa = 1e4', amp_worst, 1e4, tol=1e-4)
 """.replace("HASH9", h9),
     explanation_md=r"""

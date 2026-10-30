@@ -91,8 +91,10 @@ def edge_label(ax, p0, p1, d, text, color, frac=0.5, offset=0.2, fontsize=9):
 
 
 def draw_graph(ax, pos, size, edges, texts, colors, arrow_color, reverse, labels=None, label_color=None,
-               frac=0.5, offsets=None, fontsize=9.5, label_size=9, dead=(), dead_color=GREY):
+               frac=0.5, offsets=None, fontsize=9.5, label_size=9, dead=(), dead_color=GREY, dead_text="0.4"):
     """Nodes and arrows of one graph panel. `dead` nodes are drawn dotted grey, with grey edges.
+
+    The text inside a dead node is drawn in the darker grey `dead_text`, so that its numbers stay readable.
 
     `frac` (a number or a per-edge dict) says where along an edge its label sits; `offsets` (per-edge dict)
     overrides the perpendicular offset of 0.2 data units, a negative value putting the label on the other side.
@@ -107,7 +109,7 @@ def draw_graph(ax, pos, size, edges, texts, colors, arrow_color, reverse, labels
             edge_label(ax, s, e, d, labels[(a, c)], label_color or col, frac=f, offset=off, fontsize=label_size)
     for k, xy in pos.items():
         if k in dead:
-            node(ax, xy, texts[k], dead_color, size[k], fontsize=fontsize, ls=":", text_color=dead_color)
+            node(ax, xy, texts[k], dead_color, size[k], fontsize=fontsize, ls=":", text_color=dead_text)
         else:
             node(ax, xy, texts[k], colors[k], size[k], fontsize=fontsize)
 
@@ -133,8 +135,9 @@ def fig_computational_graph():
 
     pos = {"w": (0, 3), "x": (0, 2), "b": (0, 1), "y": (0, 0), "v1": (2.8, 2.5), "v2": (5.6, 1.75),
            "v3": (8.4, 0.9), "L": (11.0, 0.9)}
-    size = {k: (1.4, 0.7) if len(k) == 1 else (1.6, 0.7) for k in pos}
-    colors = {k: GREY if len(k) == 1 else "C0" for k in pos}
+    inputs = ("w", "x", "b", "y")
+    size = {k: (1.6, 0.7) if k.startswith("v") else (1.4, 0.7) for k in pos}
+    colors = {k: GREY if k in inputs else "C0" for k in pos}            # grey inputs, blue operations (L too)
     fwd = {"w": f"$w = {num(w)}$", "x": f"$x = {num(x)}$", "b": f"$b = {num(b)}$", "y": f"$y = {num(y)}$",
            "v1": f"$v_1 = wx = {num(v1)}$", "v2": f"$v_2 = v_1 + b = {num(v2)}$",
            "v3": f"$v_3 = v_2 - y = {num(v3)}$", "L": f"$L = v_3^2 = {num(L)}$"}
@@ -150,10 +153,12 @@ def fig_computational_graph():
     diagram(ax1, (-0.8, 11.8), (-0.6, 3.6),
             "(a) Forward pass: evaluate the nodes in topological order and keep every value",
             "four inputs, four operations, one output; values flow left to right")
-    draw_graph(ax2, pos, size, list(loc), bwd, colors, BWD, reverse=True, labels=along)
+    # the two edges into v1 run close together: label the w-edge above itself and the x-edge below itself
+    draw_graph(ax2, pos, size, list(loc), bwd, colors, BWD, reverse=True, labels=along,
+               offsets={("x", "v1"): -0.22})
     diagram(ax2, (-0.8, 11.8), (-0.6, 3.6),
-            r"(b) Backward pass: seed $\bar L = 1$, multiply by the local derivative on each edge, "
-            "add where a node is shared",
+            r"(b) Backward pass: seed $\bar L = 1$, then multiply by the local derivative on each edge, "
+            "right to left",
             rf"$\bar v_3 = 1 \cdot 2 v_3 = {num(v3b)}$,  $\bar v_2 = \bar b = {num(v2b)}$,  $\bar y = {num(yb)}$,  "
             rf"$\bar w = \bar v_1 \cdot x = {num(wb)}$,  $\bar x = \bar v_1 \cdot w = {num(xb)}$")
     fig.tight_layout()
@@ -179,8 +184,8 @@ def fig_forward_vs_reverse():
     assert x1b == 2 * x1 * (x2 + 1) ** 2 and x2b == 2 * x1 ** 2 * (x2 + 1)      # closed form
     assert (t1[2], t2[2]) == (x1b, x2b)                                         # two sweeps = one sweep
 
-    pos = {"x1": (0, 1.6), "x2": (0, 0), "v1": (2.6, 0), "v2": (5.2, 0.8), "v3": (7.8, 0.8)}
-    size = {k: (1.6, 0.76) for k in pos}
+    pos = {"x1": (0, 1.6), "x2": (0, 0), "v1": (2.8, 0), "v2": (5.6, 0.8), "v3": (8.4, 0.8)}
+    size = {k: (1.9, 0.76) if k.startswith("x") else (1.6, 0.76) for k in pos}   # room for x1-bar's two terms
     colors = {k: GREY if k.startswith("x") else "C0" for k in pos}
     along = {("x1", "v1"): rf"$\times\, x_2 = {num(x2)}$", ("x2", "v1"): rf"$\times\, x_1 = {num(x1)}$",
              ("v1", "v2"): r"$\times\, 1$", ("x1", "v2"): r"$\times\, 1$",
@@ -199,7 +204,8 @@ def fig_forward_vs_reverse():
           "v3": rf"$v_3 = {num(v3)}$" "\n" rf"$\dot v_3 = {num(2 * v2)} \cdot {num(t2[1])} = {num(t2[2])}$"},
          FWD, False),
         (r"(c) Reverse mode, seed $\bar v_3 = 1$: one sweep, both partial derivatives",
-         {"x1": rf"$x_1 = {num(x1)}$" "\n" rf"$\bar x_1 = {num(x1b_a)} + {num(x1b_b)} = {num(x1b)}$",
+         {"x1": rf"$x_1 = {num(x1)}$" "\n"
+                rf"$\bar x_1 = {num(v1b)} \cdot {num(x2)} + {num(v2b)} \cdot 1 = {num(x1b)}$",
           "x2": rf"$x_2 = {num(x2)}$" "\n" rf"$\bar x_2 = {num(v1b)} \cdot {num(x1)} = {num(x2b)}$",
           "v1": rf"$v_1 = {num(v1)}$" "\n" rf"$\bar v_1 = {num(v2b)} \cdot 1 = {num(v1b)}$",
           "v2": rf"$v_2 = {num(v2)}$" "\n" rf"$\bar v_2 = 1 \cdot {num(2 * v2)} = {num(v2b)}$",
@@ -211,9 +217,9 @@ def fig_forward_vs_reverse():
              r"$x_1$ has two children, so $\bar x_1$ adds two contributions"]
     fig, axes = plt.subplots(3, 1, figsize=(9, 7.6))
     for ax, (title, texts, col, rev), note in zip(axes, panels, notes):
-        draw_graph(ax, pos, size, list(loc), texts, colors, col, reverse=rev, labels=along, label_color=GREY,
-                   fontsize=8.5, label_size=8.5)
-        diagram(ax, (-0.9, 8.7), (-0.5, 2.1), title,
+        draw_graph(ax, pos, size, list(loc), texts, colors, col, reverse=rev, labels=along, label_color="0.4",
+                   fontsize=9.5, label_size=9)
+        diagram(ax, (-1.0, 9.3), (-0.5, 2.1), title,
                 r"grey edge labels: the local derivatives $\partial\,\mathrm{child} / \partial\,\mathrm{parent}$; " + note)
     fig.tight_layout()
     return fig
@@ -235,9 +241,9 @@ def fig_jacobian_rows_columns():
     ax1.add_patch(Rectangle((col - 1, 0), 1, m, fc=FWD, ec="none", alpha=0.25))
     ax1.add_patch(Rectangle((0, m - row), n, 1, fc=BWD, ec="none", alpha=0.25))
     for j in range(n):
-        ax1.text(j + 0.5, -0.1, f"$x_{j + 1}$", ha="center", va="top", fontsize=8.5, color=GREY)
+        ax1.text(j + 0.5, -0.1, f"$x_{j + 1}$", ha="center", va="top", fontsize=10, color="0.35")
     for i in range(m):
-        ax1.text(-0.12, m - 0.5 - i, f"$f_{i + 1}$", ha="right", va="center", fontsize=8.5, color=GREY)
+        ax1.text(-0.12, m - 0.5 - i, f"$f_{i + 1}$", ha="right", va="center", fontsize=10, color="0.35")
     ax1.annotate("", xy=(col - 0.5, m + 0.12), xytext=(col - 0.5, m + 1.0), zorder=3,
                  arrowprops=dict(arrowstyle="-|>", color=FWD, lw=1.6, mutation_scale=12))
     ax1.text(col - 0.5, m + 1.1, rf"forward sweep seeded at $x_{col}$" "\n" rf"fills one column $J e_{col}$",
@@ -255,26 +261,29 @@ def fig_jacobian_rows_columns():
             rf"(a) The Jacobian $J$ of $f: \mathbb{{R}}^{n} \to \mathbb{{R}}^{m}$, filled column by column or row by row",
             "each sweep costs a small constant times one evaluation of $f$")
 
-    ns = np.logspace(0, 9.3, 200)
+    ns = np.logspace(np.log10(0.4), 9.3, 200)
     ax2.loglog(ns, 2 * ns, color="C1", lw=2, label="central differences, $2n$")
-    ax2.loglog(ns, ns, color=FWD, lw=2, label="forward mode, $n$ sweeps")
-    ax2.fill_between(ns, rev_lo, rev_hi, color=BWD, alpha=0.15, lw=0)
+    # forward mode: n sweeps, each costing the same two to four passes as a reverse sweep (Section 3, Cost)
+    ax2.fill_between(ns, rev_lo * ns, rev_hi * ns, color=FWD, alpha=0.15, lw=0)
+    ax2.loglog(ns, rev_typ * ns, color=FWD, lw=2, ls="--", label=f"forward mode, $n$ sweeps\nof {rev_lo}–{rev_hi} passes each")
+    ax2.fill_between(ns, rev_lo, rev_hi, color=BWD, alpha=0.25, lw=0)
     ax2.loglog(ns, np.full_like(ns, float(rev_typ)), color=BWD, lw=2,
                label=f"reverse mode, {rev_lo}–{rev_hi} for any $n$")
     for nn, mk in [(n_gpt, "o"), (n_bank, "s")]:
         ax2.axvline(nn, color=GREY, ls=":", lw=1)
         ax2.plot([nn, nn], [2 * nn, rev_typ], mk, color="k", ms=5, zorder=4)
     label(ax2, (n_gpt, 2 * n_gpt), rf"GPT-2 small" "\n" rf"$n = {sci(n_gpt, 2)}$" "\n" rf"${sci(2 * n_gpt)}$ passes",
-          offset=(-6, 4), ha="right", fontsize=9)
+          offset=(-8, 6), ha="right", fontsize=9)                              # above the forward-mode band
     label(ax2, (n_gpt, rev_typ), rf"about {rev_typ}", offset=(-6, 5), ha="right", fontsize=9)
     label(ax2, (n_bank, 2 * n_bank), f"Case study 2\n$n = {n_bank}$:\n{2 * n_bank} pricings",
-          offset=(-6, 4), ha="right", fontsize=9)
+          offset=(-6, 10), ha="right", fontsize=9)
     label(ax2, (n_bank, rev_typ), f"{rev_typ}–{rev_hi}", offset=(6, 5), fontsize=9)
-    ax2.set_xlim(1, 2e9); ax2.set_ylim(1, 1e11)
-    ax2.legend(loc="upper left", fontsize=8.5, framealpha=0.95)
+    ax2.set_xlim(0.4, 2e9); ax2.set_ylim(1, 1e11)
+    ax2.legend(loc="lower right", bbox_to_anchor=(1.0, 0.11), fontsize=8.5, framealpha=0.95)   # the empty corner
     ax2.set_title("(b) Cost of one full gradient, in forward-pass units", fontsize=10)
     ax2.set_xlabel("number of inputs $n$"); ax2.set_ylabel("forward-pass equivalents")
     fig.tight_layout()
+    fig.align_titles()
     return fig
 
 
@@ -306,7 +315,8 @@ def fig_backprop_2_2_1():
            "h1": rf"${num(d2)} \cdot {num(W2[0])} = {num(back[0])}$, mask ${num(mask[0])}$" "\n" rf"$(\delta_1)_1 = {num(d1[0])}$",
            "h2": rf"${num(d2)} \cdot {num(W2[1])} = {num(back[1])}$, mask ${num(mask[1])}$" "\n" rf"$(\delta_1)_2 = {num(d1[1])}$",
            "o": rf"$\delta_2 = \hat y - y = {num(d2)}$", "L": r"$\bar{\mathcal{L}} = 1$"}
-    grads = {("x1", "h1"): f"${num(dW1[0, 0])}$", ("x2", "h1"): f"${num(dW1[0, 1])}$",
+    grads = {("x1", "h1"): rf"${num(d1[0])} \cdot {num(x[0])} = {num(dW1[0, 0])}$",
+             ("x2", "h1"): rf"${num(d1[0])} \cdot {num(x[1])} = {num(dW1[0, 1])}$",
              ("x1", "h2"): rf"${num(d1[1])} \cdot {num(x[0])} = {num(dW1[1, 0])}$",
              ("x2", "h2"): rf"${num(d1[1])} \cdot {num(x[1])} = {num(dW1[1, 1])}$",
              ("h1", "o"): rf"${num(d2)} \cdot {num(a1[0])} = {num(dW2[0])}$",
@@ -317,7 +327,7 @@ def fig_backprop_2_2_1():
                 ("h1", "o"): 0.35, ("h2", "o"): 0.35, ("o", "L"): 0.5}
     frac_bwd = {("x1", "h1"): 0.4, ("x2", "h2"): 0.4, ("x1", "h2"): 0.25, ("x2", "h1"): 0.25,
                 ("h1", "o"): 0.6, ("h2", "o"): 0.6}
-    side_fwd = {("x2", "h1"): -0.2}                        # the rising diagonal is labelled below itself
+    side_fwd = {("x2", "h1"): -0.13, ("x1", "h2"): 0.13}                        # the rising diagonal is labelled below itself
     side_bwd = {("x2", "h1"): -0.2, ("x2", "h2"): -0.2}
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 5.8))
     draw_graph(ax1, pos, size, edges, fwd, colors, FWD, reverse=False, labels=weights, frac=frac_fwd,
@@ -325,7 +335,8 @@ def fig_backprop_2_2_1():
     diagram(ax1, (-1.0, 10.4), (-0.35, 2.4),
             rf"(a) Forward pass of the 2–2–1 network: $z_1 = ({num(z1[0])}, {num(z1[1])})$, "
             rf"$a_1 = ({num(a1[0])}, {num(a1[1])})$, $\hat y = {num(yhat)}$, loss ${num(L)}$",
-            "edge labels: the weights $W_1$ (left) and $W_2$ (right); the first hidden unit is off")
+            f"edge labels: the weights $W_1$ (left) and $W_2$ (right), then the target $y = {num(y)}$; "
+            "the first hidden unit is off")
     draw_graph(ax2, pos, size, edges, bwd, colors, BWD, reverse=True, labels=grads, frac=frac_bwd,
                offsets=side_bwd, fontsize=9, dead=("h1",))
     diagram(ax2, (-1.0, 10.4), (-0.35, 2.4),
@@ -350,7 +361,7 @@ def fig_matmul_vjp_shapes():
     assert spot == Abar[0, 1] == 2 and np.allclose(wrong, [[2, 2], [1, 1]])      # the wrong guess has the right shape
     m, k, n = 2, 3, 4                                                           # unequal sides make the shape test bite
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10, 3.9), gridspec_kw={"width_ratios": [1.15, 1.2, 1]})
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(9.8, 3.9), gridspec_kw={"width_ratios": [1.15, 1.2, 1]})
 
     # (a) the worked example, with the uses of A_12 and the sources of A-bar_12 highlighted
     def table(ax, x0, top, M, name, hl=(), cell=0.5):
@@ -363,11 +374,11 @@ def fig_matmul_vjp_shapes():
         ax.text(x0 + c * cell / 2, top + 0.1, name, ha="center", va="bottom", fontsize=10)
     table(ax1, 0, 1.5, A, "$A$", hl=[(0, 1)]); table(ax1, 1.5, 1.5, B, "$B$", hl=[(1, 0), (1, 1)])
     table(ax1, 3.0, 1.5, Y, "$Y$", hl=[(0, 0), (0, 1)])
-    table(ax1, 0, -0.5, G, "$G$"); table(ax1, 1.5, -0.5, B.T, r"$B^\top$", hl=[(0, 1), (1, 1)])
+    table(ax1, 0, -0.5, G, "$G$", hl=[(0, 0), (0, 1)]); table(ax1, 1.5, -0.5, B.T, r"$B^\top$", hl=[(0, 1), (1, 1)])
     table(ax1, 3.0, -0.5, Abar, r"$\bar A = G B^\top$", hl=[(0, 1)])
     for yy in (1.0, -1.0):
         ax1.text(1.25, yy, r"$\times$", ha="center", va="center"); ax1.text(2.75, yy, "$=$", ha="center", va="center")
-    diagram(ax1, (-0.3, 4.3), (-1.8, 2.0), r"(a) $Y = AB$, $L = \sum_{ij} Y_{ij}$, so $G = \mathbf{1}\mathbf{1}^\top$",
+    diagram(ax1, (-0.3, 4.3), (-1.8, 2.0), r"(a) $Y = AB$, $L$ = sum of all $Y_{ij}$, so $G$ is all ones",
             rf"$A_{{12}}$ feeds $Y_{{11}}$ (via $B_{{21}} = {num(B[1, 0])}$) and $Y_{{12}}$ (via $B_{{22}} = {num(B[1, 1])}$)," "\n"
             rf"so $\bar A_{{12}} = G_{{11}} B_{{21}} + G_{{12}} B_{{22}} = {num(spot)}$")
 
@@ -375,7 +386,7 @@ def fig_matmul_vjp_shapes():
     def block(ax, x0, top, rows, cols, name, shape, color, scale=0.3):
         ax.add_patch(Rectangle((x0, top - rows * scale), cols * scale, rows * scale, fc=color, ec="k", lw=1, alpha=0.3))
         ax.text(x0 + cols * scale / 2, top - rows * scale / 2, name, ha="center", va="center", fontsize=9.5)
-        ax.text(x0 + cols * scale / 2, top + 0.04, shape, ha="center", va="bottom", fontsize=8.5)
+        ax.text(x0 + cols * scale / 2, top + 0.04, shape, ha="center", va="bottom", fontsize=9.5)
     block(ax2, 0, 2.0, m, k, "$A$", r"$m \times k$", "C0"); block(ax2, 1.2, 2.0, k, n, "$B$", r"$k \times n$", "C1")
     block(ax2, 2.7, 2.0, m, n, "$Y$", r"$m \times n$", FWD)
     ax2.text(1.05, 1.7, r"$\times$", ha="center", va="center"); ax2.text(2.55, 1.7, "$=$", ha="center", va="center")
@@ -384,7 +395,7 @@ def fig_matmul_vjp_shapes():
     ax2.text(1.35, 0.2, r"$\times$", ha="center", va="center"); ax2.text(2.55, 0.2, "$=$", ha="center", va="center")
     ax2.text(1.95, -1.05, r"$G B^\top$: $(m \times n)(n \times k) = m \times k$, the shape of $A$" "\n"
              r"$B^\top G$: $(n \times k)(m \times n)$, inner sizes $k \neq m$: no product",
-             ha="center", va="center", fontsize=8.5)
+             ha="center", va="center", fontsize=9)
     diagram(ax2, (-0.3, 4.1), (-1.5, 2.4), r"(b) The shape test: only $G B^\top$ has the shape of $A$",
             f"blocks drawn with $m = {m}$, $k = {k}$, $n = {n}$")
 
@@ -394,8 +405,9 @@ def fig_matmul_vjp_shapes():
         for j in range(2):
             ax3.add_patch(Rectangle((j * sc, 2.0 - (i + 1) * sc), sc, sc, fc="C1", alpha=0.25, ec="k", lw=0.8))
             ax3.text((j + 0.5) * sc, 2.0 - (i + 0.5) * sc, f"$b_{j + 1}$", ha="center", va="center", fontsize=9)
-            ax3.add_patch(Rectangle((2.0 + j * sc, 2.0 - (i + 1) * sc), sc, sc, fc=FWD, alpha=0.25, ec="k", lw=0.8))
-            ax3.text(2.0 + (j + 0.5) * sc, 2.0 - (i + 0.5) * sc, f"$G_{{{i + 1}{j + 1}}}$", ha="center", va="center", fontsize=8.5)
+            # G is the upstream gradient, on the backward side: red-toned, lighter than the b-bar it sums into
+            ax3.add_patch(Rectangle((2.0 + j * sc, 2.0 - (i + 1) * sc), sc, sc, fc=BWD, alpha=0.15, ec="k", lw=0.8))
+            ax3.text(2.0 + (j + 0.5) * sc, 2.0 - (i + 0.5) * sc, f"$G_{{{i + 1}{j + 1}}}$", ha="center", va="center", fontsize=9.5)
     for j in range(2):
         ax3.add_patch(Rectangle((j * sc, 0.0), sc, sc, fc="C1", alpha=0.5, ec="k", lw=0.8))
         ax3.text((j + 0.5) * sc, sc / 2, f"$b_{j + 1}$", ha="center", va="center", fontsize=9)
@@ -404,96 +416,171 @@ def fig_matmul_vjp_shapes():
         ax3.annotate("", xy=(2.0 + (j + 0.5) * sc, 0.48), xytext=(2.0 + (j + 0.5) * sc, 0.7),
                      arrowprops=dict(arrowstyle="-|>", color=BWD))
     ax3.annotate("", xy=(sc, 0.7), xytext=(sc, 0.48), arrowprops=dict(arrowstyle="-|>", color=FWD))
-    ax3.text(sc, 2.08, "copy up", ha="center", va="bottom", fontsize=9, color=FWD)
-    ax3.text(2.0 + sc, 2.08, "sum down", ha="center", va="bottom", fontsize=9, color=BWD)
-    ax3.text(sc, -0.3, r"$\mathbf{1} b^\top$", ha="center", va="top", fontsize=9)
+    ax3.text(sc, 2.08, "forward:\ncopy up", ha="center", va="bottom", fontsize=9, color=FWD)
+    ax3.text(2.0 + sc, 2.08, "backward:\nsum down", ha="center", va="bottom", fontsize=9, color=BWD)
+    # names of the four arrays, beside them: the broadcast matrix 1 b^T and the vector b on the left,
+    # the upstream gradient G and the bias gradient on the right
+    ax3.text(-0.06, 2.0 - 1.5 * sc, r"$\mathbf{1} b^\top$", ha="right", va="center", fontsize=9.5)
+    ax3.text(-0.06, sc / 2, r"$b$", ha="right", va="center", fontsize=9.5)
+    ax3.text(2.0 + 2 * sc + 0.06, 2.0 - 1.5 * sc, r"$G$", ha="left", va="center", fontsize=9.5)
+    ax3.text(2.0 + 2 * sc + 0.06, sc / 2, r"$\bar b$", ha="left", va="center", fontsize=9.5)
     ax3.text(2.0 + sc, -0.3, r"$\bar b = G^\top \mathbf{1}$", ha="center", va="top", fontsize=9)
-    diagram(ax3, (-0.25, 3.1), (-0.8, 2.5), "(c) Broadcast forwards, sum backwards",
+    diagram(ax3, (-0.6, 3.3), (-0.8, 2.75), "(c) Broadcast forwards, sum backwards",
             r"$b$ is used once per row, so $\bar b_j$ collects one" "\n" r"contribution per row: $\bar b_j = G_{1j} + G_{2j} + G_{3j}$")
+    fig.tight_layout()
+    fig.align_titles()                                                          # equal-aspect panels differ in height
+    return fig
+
+
+def r_rel(g, ghat):
+    """Section 7's relative error, |g - ghat| / max(|g|, |ghat|, 1e-12)."""
+    return abs(g - ghat) / max(abs(g), abs(ghat), 1e-12)
+
+
+def bands(ax, xpos=None):
+    """Shade Section 7's relative-error bands; with `xpos` (data x), name them there, right-aligned."""
+    # (lower, upper, tint, alpha, name, height of the name, darker shade the name is written in)
+    for lo, hi, col, alpha, name, ytxt, txt in [(1e-2, 1e3, "C3", 0.08, "bug", 1e-1, "C3"),
+                                                (1e-4, 1e-2, "C1", 0.08, "suspicious", 1e-3, "#b35900"),
+                                                (1e-7, 1e-4, "C2", 0.07, "acceptable with kinks", 3e-6, "#1f7a1f"),
+                                                (1e-20, 1e-7, "C0", 0.0, "correct", 1e-9, "C0")]:
+        ax.axhspan(lo, hi, color=col, alpha=alpha, lw=0)
+        if xpos is not None:
+            ax.text(xpos, ytxt, name, color=txt, fontsize=9, ha="right", va="center")
+
+
+def fig_gradient_check_pitfalls():
+    """Section 7 and Case study 3: the planted tanh bug at three inputs, its relative error, and the float32 floor."""
+    h = 1e-5
+
+    def witness(a):
+        """The independent witness: the central difference of tanh at a with step h (float64)."""
+        return float((np.tanh(a + h) - np.tanh(a - h)) / (2 * h))
+    # (a) the tanh rule: correct (uses the output) versus the bug (uses the input), at three inputs
+    checks = {}
+    for a0 in (0.1, 0.5, 1.0):
+        good, bad, wit = 1 - np.tanh(a0) ** 2, 1 - a0 ** 2, witness(a0)
+        checks[a0] = (good, bad, r_rel(bad, wit), r_rel(good, wit))
+        assert abs(wit - good) < 1e-9                                           # the central difference sides with the output rule
+    assert abs(checks[0.5][0] - 0.7864) < 5e-5 and abs(checks[0.5][2] - 0.046) < 1e-3     # Section 7, Case study 3
+    assert abs(checks[0.1][0] - 0.9901) < 5e-5 and abs(checks[0.1][2] - 7e-5) < 5e-6
+    assert abs(checks[1.0][0] - 0.42) < 5e-4 and checks[1.0][1] == 0 and checks[1.0][2] == 1
+    assert all(1e-12 < c[3] < 1e-10 for c in checks.values())                   # "10^-11 on others" (Case study 3)
+    # (b) relative error of either rule against the witness, as the input a grows
+    aa = np.linspace(0.01, 1.6, 318)
+    wit_a = np.array([witness(a) for a in aa])
+    r_bug = np.array([r_rel(1 - a ** 2, w) for a, w in zip(aa, wit_a)])
+    r_good = np.array([r_rel(1 - np.tanh(a) ** 2, w) for a, w in zip(aa, wit_a)])
+    cross4, cross2 = aa[np.argmax(r_bug > 1e-4)], aa[np.argmax(r_bug > 1e-2)]
+    assert 0.10 < cross4 < 0.12 and 0.33 < cross2 < 0.36                         # the bug passes a check below a = 0.11
+    # (c) the correct rule at a = 0.5 checked with every step h, in float64 and entirely in float32
+    a0, g = 0.5, 1 - np.tanh(0.5) ** 2
+    hs = np.logspace(-8, -1, 141)
+
+    def r_of_h(hh, dtype):
+        a, step = dtype(a0), dtype(hh)
+        return r_rel(g, float((np.tanh(a + step) - np.tanh(a - step)) / (dtype(2) * step)))
+    r64 = np.array([r_of_h(hh, np.float64) for hh in hs])
+    r32 = np.array([r_of_h(hh, np.float32) for hh in hs])
+    i5 = int(np.argmin(np.abs(hs - h)))
+    assert np.isclose(hs[i5], h) and 1e-11 < r64[i5] < 2e-11 and 3e-3 < r32[i5] < 6e-3
+    assert r32[hs > 1e-4].min() > 1e-7                                          # float32 never reaches "correct" here
+    assert np.isclose(r64[-1], r32[-1], rtol=1e-3) and abs(r64[-1] - 1.2e-3) < 1e-4   # truncation h^2 at h = 0.1
+
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10, 3.6))
+    a = np.linspace(0, 1.6, 300)
+    ax1.plot(a, 1 - np.tanh(a) ** 2, color="C0", lw=2, label=r"correct: $1 - \tanh^2 a$")
+    ax1.plot(a, 1 - a ** 2, color="C3", lw=2, ls="--", label=r"bug: $1 - a^2$")
+    lines = []
+    for a0_, off in [(0.1, (2, 6)), (0.5, (6, 2)), (1.0, (6, -6))]:
+        good, bad = checks[a0_][:2]
+        ax1.plot([a0_, a0_], [bad, good], color="k", lw=1)
+        ax1.plot(a0_, good, "o", color="C0", ms=5, zorder=4); ax1.plot(a0_, bad, "o", color="C3", ms=5, zorder=4)
+        label(ax1, (a0_, good if a0_ < 1 else (good + bad) / 2), f"$a = {num(a0_)}$", offset=off,
+              ha="left", va="bottom" if a0_ < 1 else "center", fontsize=9)
+        lines.append(rf"$a = {num(a0_)}$:  ${good:.4g}$ vs ${num(round(bad, 4))}$")
+    ax1.text(0.05, -0.2, "correct vs bug\n" + "\n".join(lines), ha="left", va="top", fontsize=8.5, linespacing=1.35)
+    ax1.set_xlim(0, 1.6); ax1.set_ylim(-1.65, 1.3)
+    ax1.legend(loc="lower left", fontsize=8.5, framealpha=0.95)
+    ax1.set_title("(a) Correct rule and planted bug", fontsize=10)
+    ax1.set_xlabel("$a$ (input of tanh)"); ax1.set_ylabel(r"claimed derivative $\tanh'(a)$")
+
+    bands(ax2, xpos=1.57)
+    ax2.semilogy(aa, r_bug, color="C3", lw=2, ls="--", label=r"bug $1 - a^2$")
+    ax2.semilogy(aa, r_good, color="C0", lw=1.2, label=r"correct $1 - \tanh^2 a$")
+    for a0_, off, va in [(0.1, (6, -3), "top"), (0.5, (6, -3), "top"), (1.0, (-6, 4), "bottom")]:
+        r = checks[a0_][2]
+        ax2.plot(a0_, r, "o", color="C3", ms=5, zorder=4)
+        label(ax2, (a0_, r), rf"$r = {rel(r)}$", offset=off, ha="right" if a0_ == 1 else "left", va=va,
+              fontsize=9)
+    ax2.set_xlim(0, 1.6); ax2.set_ylim(1e-13, 30)
+    ax2.legend(loc="lower left", bbox_to_anchor=(0.06, 0.21), fontsize=8.5, framealpha=0.95)
+    ax2.set_title(r"(b) Relative error against the witness, $h = 10^{-5}$", fontsize=10)
+    ax2.set_xlabel("$a$ (input of tanh)"); ax2.set_ylabel("relative error $r$")
+
+    bands(ax3)
+    ax3.loglog(hs, r64, color="C0", lw=1.6, label="float64")
+    ax3.loglog(hs, r32, color="C1", lw=1.6, label="float32")
+    ax3.axvline(h, color=GREY, ls=":", lw=1)
+    ax3.plot([h, h], [r64[i5], r32[i5]], "o", color="k", ms=5, zorder=4)
+    # one line each at 8.5 pt: ends inside the right spine and clears the bottom spine and the rising blue line
+    label(ax3, (h, r32[i5]), rf"float32: $r = {sci(r32[i5])}$", offset=(4, 7), fontsize=8.5)
+    label(ax3, (h, r64[i5]), rf"float64: $r = {sci(r64[i5])}$", offset=(4, -4), va="top", fontsize=8.5)
+    ax3.set_xlim(1e-8, 1e-1); ax3.set_ylim(1e-13, 30)
+    ax3.legend(loc="upper right", ncol=2, fontsize=8.5, framealpha=0.95, handlelength=1.4, columnspacing=0.9)
+    ax3.set_title(r"(c) Correct rule at $a = 0.5$, every step $h$", fontsize=10)
+    ax3.set_xlabel("step $h$"); ax3.set_ylabel("relative error $r$")
     fig.tight_layout()
     return fig
 
 
-def fig_gradient_check_pitfalls():
-    """Section 7: the planted tanh bug, the ReLU false alarm, and float32 against float64 on the same check."""
-    h = 1e-5
-    # (a) the tanh rule: correct (output) versus bug (input), compared at three inputs
-    checks = {}
-    for a0 in (0.1, 0.5, 1.0):
-        good, bad = 1 - np.tanh(a0) ** 2, 1 - a0 ** 2
-        witness = (np.tanh(a0 + h) - np.tanh(a0 - h)) / (2 * h)
-        checks[a0] = (good, bad, abs(good - bad) / max(abs(good), abs(bad), 1e-12))
-        assert abs(witness - good) < 1e-9                                       # the central difference sides with the output rule
-    assert abs(checks[0.5][0] - 0.7864) < 5e-5 and abs(checks[0.5][2] - 0.046) < 1e-3     # Section 7, Case study 3
-    assert abs(checks[0.1][0] - 0.9901) < 5e-5 and abs(checks[0.1][2] - 7e-5) < 1e-5
-    assert abs(checks[1.0][0] - 0.42) < 5e-4 and checks[1.0][1] == 0 and checks[1.0][2] == 1
-    # (b) ReLU within h of its kink (Section 8's worked example, pitfall 1)
-    z0 = 1e-6
-    relu = lambda z: max(z, 0.0)                                                # noqa: E731
-    ghat_relu = (relu(z0 + h) - relu(z0 - h)) / (2 * h)
-    assert abs(ghat_relu - 0.55) < 1e-12
-    # (c) Section 7's check of L = (wx + b - y)^2 at w = 2, in float64 and entirely in float32
-    g = 12.0
-    hs = np.logspace(-8, -1, 141)
-    L64 = lambda w: (w * 3.0 + 1.0 - 5.0) ** 2                                  # noqa: E731
-    r64 = np.array([abs((L64(2.0 + hh) - L64(2.0 - hh)) / (2 * hh) - g) / g for hh in hs])
+def fig_relu_kink():
+    """Section 8 (worked example 1), Section 7 pitfall 1: a correct ReLU rule 'fails' a check within h of the kink."""
+    h, z0 = 1e-5, 1e-6
+    relu = lambda z: np.maximum(z, 0.0)                                         # noqa: E731
 
-    def L32(w):
-        return (w * np.float32(3) + np.float32(1) - np.float32(5)) ** 2
-    w32 = np.float32(2)
-    r32 = np.array([abs(float((L32(w32 + np.float32(hh)) - L32(w32 - np.float32(hh))) / (np.float32(2) * np.float32(hh))) - g) / g
-                    for hh in hs])
-    i5 = int(np.argmin(np.abs(hs - 1e-5)))
-    assert np.isclose(hs[i5], 1e-5) and 1e-11 < r64[i5] < 5e-11 and 1e-3 < r32[i5] < 2e-3
-    assert abs((L64(2 + h) - L64(2 - h)) - 0.00024) < 1e-12                     # the guide's difference 0.00024
+    def ghat(z):
+        return (relu(z + h) - relu(z - h)) / (2 * h)
+    g0 = float(ghat(z0))
+    assert abs(g0 - 0.55) < 1e-12 and abs(r_rel(1.0, g0) - 0.45) < 1e-12        # 0.55 against the analytic 1
+    assert float(ghat(0.0)) == 0.5 and float(ghat(-2 * h)) == 0 and np.isclose(float(ghat(2 * h)), 1)  # agree beyond h
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10, 3.7), gridspec_kw={"width_ratios": [1.2, 0.95, 1.1]})
-    a = np.linspace(-1.6, 1.6, 400)
-    ax1.plot(a, 1 - np.tanh(a) ** 2, color="C0", lw=2, label=r"$1 - \tanh^2 a$ (correct: uses the output)")
-    ax1.plot(a, 1 - a ** 2, color="C3", lw=2, ls="--", label=r"$1 - a^2$ (bug: uses the input)")
-    lines = []
-    for a0, off, ha in [(0.1, (-5, 5), "right"), (0.5, (6, 4), "left"), (1.0, (6, 2), "left")]:
-        good, bad, r = checks[a0]
-        ax1.plot([a0, a0], [bad, good], color="k", lw=1)
-        ax1.plot(a0, good, "o", color="C0", ms=5, zorder=4); ax1.plot(a0, bad, "o", color="C3", ms=5, zorder=4)
-        label(ax1, (a0, good), f"$a = {num(a0)}$", offset=off, ha=ha, fontsize=8.5)
-        lines.append(rf"$a = {num(a0)}$: ${good:.4g}$ vs ${num(round(bad, 4))}$, $r = {rel(r)}$")
-    ax1.text(1.52, 2.25, "\n".join(lines), ha="right", va="top", fontsize=8, linespacing=1.4)
-    ax1.set_xlim(-1.6, 1.6); ax1.set_ylim(-1.6, 2.3)
-    ax1.legend(loc="lower left", fontsize=8, framealpha=0.95)
-    ax1.set_title("(a) A bug that hides near $a = 0$", fontsize=10)
-    ax1.set_xlabel("$a$ (input of tanh)"); ax1.set_ylabel(r"claimed derivative $\tanh'(a)$")
-
-    u = 1e-5                                                                    # axis unit of panel (b)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.7), gridspec_kw={"width_ratios": [1, 1.15]})
+    u = 1e-5                                                                    # axis unit of panel (a)
     zz = np.array([-2e-5, 0.0, 2e-5])
-    ax2.plot(zz / u, np.maximum(zz, 0) / u, color="C0", lw=2)
-    ax2.plot([(z0 - h) / u, (z0 + h) / u], [relu(z0 - h) / u, relu(z0 + h) / u], "o--", color="C3", lw=1.6, ms=6)
-    ax2.axvline(z0 / u, color=GREY, ls=":", lw=1)
-    ax2.text(1.9, 1.62, "ReLU$(z)$", color="C0", ha="right", va="top", fontsize=9)
-    ax2.text(1.9, -0.52, f"central difference:\nslope $({relu(z0 + h) / u:.1f} - 0) / 2 = {ghat_relu:.2f}$",
-             color="C3", ha="right", va="bottom", fontsize=8.5)
-    ax2.text(z0 / u - 0.1, 1.9, "$z_0 = 10^{-6}$\nanalytic slope $1$", ha="right", va="top", fontsize=8.5)
-    label(ax2, ((z0 - h) / u, 0), "$z_0 - h$", offset=(0, -13), ha="center", fontsize=8.5)
-    label(ax2, ((z0 + h) / u, (z0 + h) / u), "$z_0 + h$", offset=(-7, 5), ha="right", fontsize=8.5)
-    ax2.set_xlim(-2, 2); ax2.set_ylim(-0.6, 2.0)
-    ax2.set_title("(b) A false alarm at a kink", fontsize=10)
-    ax2.set_xlabel("$z$ in units of $10^{-5}$"); ax2.set_ylabel("ReLU$(z)$ in units of $10^{-5}$")
+    ax1.axvspan((z0 - h) / u, (z0 + h) / u, color=GREY, alpha=0.12, lw=0)
+    ax1.plot(zz / u, relu(zz) / u, color="C0", lw=2)
+    ax1.plot([(z0 - h) / u, (z0 + h) / u], [relu(z0 - h) / u, relu(z0 + h) / u], "o--", color="C3", lw=1.6, ms=6)
+    ax1.axvline(z0 / u, color="k", ls=":", lw=1)
+    ax1.text(1.5, 1.9, r"ReLU$(z)$, slope 1", color="C0", ha="right", va="top", fontsize=9)
+    ax1.text(1.95, -0.5, f"central difference:\nslope $({float(relu(z0 + h)) / u:.1f} - 0) / 2 = {g0:.2f}$",
+             color="C3", ha="right", va="bottom", fontsize=9)
+    label(ax1, (z0 / u, 1.92), r"$z_0 = 10^{-6}$", offset=(-4, 0), ha="right", va="top", fontsize=9)
+    label(ax1, ((z0 - h) / u, 0), "$z_0 - h$", offset=(0, -13), ha="center", fontsize=9)
+    label(ax1, ((z0 + h) / u, (z0 + h) / u), "$z_0 + h$", offset=(-7, 5), ha="right", fontsize=9)
+    ax1.set_xlim(-2, 2); ax1.set_ylim(-0.6, 2.0)
+    ax1.set_title(r"(a) The two evaluations straddle the kink", fontsize=10)
+    ax1.set_xlabel("$z$ in units of $10^{-5}$"); ax1.set_ylabel("ReLU$(z)$ in units of $10^{-5}$")
 
-    ax3.loglog(hs, r64, color="C0", lw=2, label="float64")
-    ax3.loglog(hs, r32, color="C1", lw=2, label="float32")
-    ax3.axhspan(1e-2, 1, color="C3", alpha=0.08, lw=0); ax3.axhspan(1e-4, 1e-2, color="C1", alpha=0.08, lw=0)
-    ax3.axhspan(1e-7, 1e-4, color="C2", alpha=0.06, lw=0)
-    for xx, yy, txt, col, ha in [(7e-2, 1e-1, "bug", "C3", "right"), (7e-2, 1e-3, "suspicious", "C1", "right"),
-                                 (1.4e-8, 3e-6, "acceptable with kinks", "C2", "left"), (1.4e-8, 1e-11, "correct", "C0", "left")]:
-        ax3.text(xx, yy, txt, color=col, fontsize=8, va="center", ha=ha)
-    ax3.axvline(1e-5, color=GREY, ls=":", lw=1)
-    ax3.plot([1e-5, 1e-5], [r64[i5], r32[i5]], "o", color="k", ms=5, zorder=4)
-    label(ax3, (1e-5, r64[i5]), rf"$h = 10^{{-5}}$, float64:" "\n" rf"$r = {sci(r64[i5])}$", offset=(6, 4), fontsize=8.5)
-    label(ax3, (1e-5, r32[i5]), rf"float32: $r = {sci(r32[i5])}$", offset=(6, 3), fontsize=8.5)
-    ax3.set_xlim(1e-8, 1e-1); ax3.set_ylim(1e-12, 1)
-    ax3.legend(loc="upper right", fontsize=8.5, framealpha=0.95)
-    ax3.set_title("(c) Precision sets the floor of the same check", fontsize=10)
-    ax3.set_xlabel("step $h$"); ax3.set_ylabel(rf"relative error $r$ against the analytic ${num(g)}$")
+    t = np.linspace(-2.5, 2.5, 501)                                             # check point z in units of h
+    est = ghat(t * h)
+    ax2.axvspan(-1, 1, color=GREY, alpha=0.12, lw=0)
+    ax2.plot([-2.5, 0], [0, 0], color="C0", lw=2.2, label=r"analytic $\mathrm{relu}'(z)$")
+    ax2.plot([0, 2.5], [1, 1], color="C0", lw=2.2)
+    ax2.plot([0, 0], [0, 1], color="C0", lw=1, ls=":")
+    ax2.plot(0, 0, "o", color="C0", ms=5, zorder=4)                            # the convention relu'(0) = 0
+    ax2.plot(t, est, color="C3", lw=1.8, ls="--", label=r"central difference, $h = 10^{-5}$")
+    ax2.plot(0, 1, "o", mfc="white", mec="C0", mew=1.5, ms=5, zorder=5)          # the jump: relu'(0) is the lower value
+    ax2.plot([z0 / h, z0 / h], [g0, 1], color="k", lw=1, zorder=3)              # estimate vs analytic 1, as in Figure 6(a)
+    ax2.plot(z0 / h, g0, "o", color="C3", ms=6, zorder=4)
+    label(ax2, (z0 / h, g0), rf"$z_0 = 0.1h$: ${g0:.2f}$ vs $1$", offset=(8, -4), va="top", fontsize=9)
+    ax2.plot(0, 0.5, "o", color="C3", ms=5, zorder=4)
+    label(ax2, (0, 0.5), "$z = 0$: $0.5$ vs $0$", offset=(-8, 4), ha="right", fontsize=9)
+    ax2.text(0, 1.18, "disagreement only for $|z| < h$", ha="center", va="center", fontsize=9, color="k")
+    ax2.set_xlim(-2.5, 2.5); ax2.set_ylim(-0.15, 1.3)
+    ax2.legend(loc="lower right", bbox_to_anchor=(1.0, 0.16), fontsize=8.5, framealpha=0.95)
+    ax2.set_title("(b) The estimate as the check point $z$ moves", fontsize=10)
+    ax2.set_xlabel("check point $z$ in units of $h$"); ax2.set_ylabel("derivative of ReLU at $z$")
     fig.tight_layout()
     return fig
 
@@ -515,35 +602,40 @@ def fig_activation_memory():
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.9), gridspec_kw={"width_ratios": [1.1, 1]})
     cats = ["activations kept for\nthe backward pass, 12 layers", "weights (fp16)",
-            "activations with checkpointing\n($2 s b h$ per layer)"]
-    ax1.barh(0, linear, height=0.55, color=BWD, alpha=0.45, label="linear terms, $34\\,s b h$")
-    ax1.barh(0, attention, left=linear, height=0.55, color=BWD, label="attention terms, $5\\,a s^2 b$")
+            "activations with checkpointing\n($2 s b h$ bytes per layer)"]
+    ax1.barh(0, linear, height=0.55, color="C1", alpha=0.6, label="linear terms, $34\\,s b h$")
+    ax1.barh(0, attention, left=linear, height=0.55, color="C4", label="attention terms, $5\\,a s^2 b$")
     ax1.text(linear / 2, 0, f"{linear:.2f} GB", ha="center", va="center", fontsize=8.5)
     ax1.text(linear + attention / 2, 0, f"{attention:.2f} GB", ha="center", va="center", fontsize=8.5, color="white")
     ax1.barh(1, weights, height=0.55, color="C0")
     ax1.barh(2, ckpt, height=0.55, color=FWD)
-    for yy, val, txt in [(0, total, f"{total:.1f} GB, {total / weights:.0f} times the weights"), (1, weights, f"{weights:.2f} GB"),
-                         (2, ckpt, f"{ckpt:.2f} GB, {total / ckpt:.0f} times less")]:
+    peak = ckpt + act_gb(s, per_layer=True)                                     # plus the one layer being recomputed
+    assert round(peak, 2) == 0.87 and round(total / peak) == 10
+    ax1.barh(2, peak - ckpt, left=ckpt, height=0.55, fc="none", ec=FWD, hatch="////", lw=1)
+    for yy, val, txt in [(0, total, f"{total:.1f} GB,\n{total / weights:.0f} times the weights"), (1, weights, f"{weights:.2f} GB"),
+                         (2, peak, f"{ckpt:.2f} GB stored, {total / ckpt:.0f} times less;\npeak {peak:.2f} GB while a layer is recomputed")]:
         ax1.text(val + 0.15, yy, txt, va="center", ha="left", fontsize=9)
     ax1.set_yticks(range(3), cats); ax1.invert_yaxis(); ax1.set_xlim(0, 13.5)
     ax1.grid(axis="y", visible=False)
     ax1.legend(loc="center right", fontsize=8.5, framealpha=0.95)
     ax1.set_title("(a) What the backward pass must keep: GPT-2 small", fontsize=10)
-    ax1.set_xlabel("gigabytes (batch 8, context 1,024, 16-bit)"); ax1.set_ylabel("")
+    ax1.set_xlabel("gigabytes (batch 8, context 1,024, 16-bit)"); ax1.set_ylabel("kept in memory")
 
     ss = 2 ** np.arange(7, 14)                                                  # 128 ... 8192
     assert np.allclose(act_gb(ss), [0.415, 1.019, 2.793, 8.607, 29.29, 106.90, 407.08], rtol=2e-3)
     ax2.loglog(ss, act_gb(ss), "o-", color=BWD, lw=2, ms=4, label="activations, 12 layers")
     ax2.loglog(ss, layers * 34 * ss * b * h / 1e9, color="C1", ls="--", lw=1.4, label="linear terms $\\propto s$")
-    ax2.loglog(ss, layers * 5 * a * ss ** 2 * b / 1e9, color=FWD, ls=":", lw=1.6, label="attention terms $\\propto s^2$")
+    ax2.loglog(ss, layers * 5 * a * ss ** 2 * b / 1e9, color="C4", ls=":", lw=1.8, label="attention terms $\\propto s^2$")
     ax2.loglog(ss, layers * 2 * ss * b * h / 1e9, color=FWD, lw=1.6, label="with checkpointing")
     ax2.axhline(weights, color="C0", lw=1.6, label=f"weights: {weights:.2f} GB")
     ax2.plot(s, total, "o", color="k", ms=6, zorder=4)
-    label(ax2, (s, total), f"the case study:\n$s = {s:,}$, {total:.1f} GB", offset=(8, -4), va="top", fontsize=9)
-    ax2.set_xlim(100, 10000); ax2.set_ylim(0.01, 1000)
-    ax2.legend(loc="upper left", fontsize=8, framealpha=0.95)
-    ax2.set_title("(b) Activations grow with $s$ and $s^2$; weights do not", fontsize=10)
-    ax2.set_xlabel("sequence length $s$ (batch 8)"); ax2.set_ylabel("GB (per-layer formula, fp16)")
+    ax2.annotate(f"the case study:\n$s = {s // 1000}{{,}}{s % 1000:03d}$, {total:.1f} GB", (s, total), xytext=(135, 300),
+                 fontsize=9, ha="left", va="top",
+                 arrowprops=dict(arrowstyle="-", color="k", lw=0.8, shrinkA=2, shrinkB=4))
+    ax2.set_xlim(100, 10000); ax2.set_ylim(1e-4, 1000)
+    ax2.legend(loc="lower right", fontsize=8.5, framealpha=0.95)                # the empty band below the weights
+    ax2.set_title("(b) Activations grow with $s$ and $s^2$", fontsize=10)
+    ax2.set_xlabel("sequence length $s$ (batch 8)"); ax2.set_ylabel("gigabytes, 12 layers (16-bit)")
     fig.tight_layout()
     return fig
 
@@ -555,6 +647,7 @@ FIGURES = {
     "backprop-2-2-1": fig_backprop_2_2_1,
     "matmul-vjp-shapes": fig_matmul_vjp_shapes,
     "gradient-check-pitfalls": fig_gradient_check_pitfalls,
+    "relu-kink": fig_relu_kink,
     "activation-memory": fig_activation_memory,
 }
 

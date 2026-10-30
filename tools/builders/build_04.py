@@ -3,7 +3,7 @@ build_04.py — generates lesson.ipynb, exercises.ipynb and solutions.ipynb for
 Module 04 — Differential Calculus for ML.
 
 Run from the repository root:
-    python3 _authoring/builders/build_04.py
+    python3 tools/builders/build_04.py
     python3 tools/run_notebooks.py part-2-calculus-and-optimization/04-differential-calculus
 """
 import pathlib
@@ -80,33 +80,77 @@ g, x0, exact = np.exp, 1.0, np.e
 hs = np.logspace(-14, -1, 60)
 err_f = np.abs(fwd_diff(g, x0, hs) - exact)
 err_c = np.abs(central_diff(g, x0, hs) - exact)
+i_f, i_c = np.argmin(err_f), np.argmin(err_c)
 
 plt.loglog(hs, err_f, "o-", ms=3, label="forward difference")
 plt.loglog(hs, err_c, "s-", ms=3, label="central difference")
 plt.loglog(hs, hs * np.e / 2, "--", lw=1, color="gray", label=r"$h\,e/2$ (truncation, forward)")
+plt.loglog(hs, hs**2 * np.e / 6, "-.", lw=1, color="gray", label=r"$h^2 e/6$ (truncation, central)")
 plt.loglog(hs, 2.2e-16 * np.e / hs, ":", lw=1, color="black", label=r"$\varepsilon e / h$ (round-off)")
+plt.loglog(hs[[i_f, i_c]], [err_f[i_f], err_c[i_c]], "k*", ms=10, label="best h of each scheme")
+plt.ylim(1e-13, 1)
 plt.xlabel("step size h"); plt.ylabel("absolute error of derivative estimate")
 plt.title("Finite-difference error of d/dx exp(x) at x = 1")
 plt.legend(fontsize=8); plt.grid(alpha=0.3); plt.show()
 
-i_f, i_c = np.argmin(err_f), np.argmin(err_c)
 print(f"best forward : h = {hs[i_f]:.1e}, error {err_f[i_f]:.1e}")
 print(f"best central : h = {hs[i_c]:.1e}, error {err_c[i_c]:.1e}")
 """)
 
 nb.md(r"""
-Notice the V shape. On the right, both curves are straight lines: slope 1 for the forward
-scheme (error $\propto h$) and slope 2 for the central scheme (error $\propto h^2$), exactly
-the truncation orders. On the left, both ride the dotted round-off line $\varepsilon e/h$, which
-*rises* as $h$ shrinks. The best step is where the two meet: about $10^{-8}$ for forward
-(error $\sim 10^{-8}$) and about $10^{-5}$ to $10^{-6}$ for central (error $\sim 10^{-10}$).
-Below $h \approx 10^{-12}$ the estimate is mostly noise — "smaller is safer" is false.
+Notice the V shape. On the right, both curves are straight lines that follow their grey
+truncation references: slope 1 for the forward scheme (error $\propto h$) and slope 2 for the
+central scheme (error $\propto h^2$), exactly the truncation orders. On the left, both ride the
+dotted round-off line $\varepsilon e/h$, which *rises* as $h$ shrinks. The best step (black stars)
+is where the two meet: about $10^{-8}$ for forward (error $\sim 10^{-8}$) and about
+$4\times10^{-6}$ for central (error $\sim 10^{-11}$). Below $h \approx 10^{-12}$ the error is pure
+round-off and only two to four significant digits survive — "smaller is safer" is false.
 
 For the hand example, the forward error $0.61$ matches $\tfrac{h}{2}f''(2) = 0.05\cdot 12 = 0.6$,
 and the central error $0.01$ matches $\tfrac{h^2}{6}f'''(2) = \tfrac{0.01}{6}\cdot 6 = 0.01$.
 
 **Try it yourself:** replace `np.exp` by `np.sin` (exact derivative `np.cos(1.0)`), or cast
 inputs to `np.float32` — where does the V's bottom move, and why?
+
+Why is the central scheme so much better? Draw the two chords for the hand example $f(x) = x^3$
+at $x = 2$, with a large step $h = 0.5$ so that they are visible.
+""")
+
+nb.code(r"""
+a1, h1 = 2.0, 0.5                                   # f(x) = x^3 from the cell above
+s_fwd, s_cen = fwd_diff(f, a1, h1), central_diff(f, a1, h1)
+xx = np.linspace(1.2, 2.8, 200)
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+ax1.plot(xx, f(xx), "k", lw=2, label=r"$f(x) = x^3$")
+ax1.plot(xx, f(a1) + 12 * (xx - a1), color="gray", lw=1.5, label="tangent, slope 12")
+ax1.plot(xx, f(a1) + s_fwd * (xx - a1), "--", color="C0", label=f"forward chord, slope {s_fwd:.2f}")
+ax1.plot(xx, f(a1 - h1) + s_cen * (xx - (a1 - h1)), "--", color="C1", label=f"central chord, slope {s_cen:.2f}")
+ax1.plot([a1, a1 + h1], [f(a1), f(a1 + h1)], "o", color="C0")
+ax1.plot([a1 - h1, a1 + h1], [f(a1 - h1), f(a1 + h1)], "s", color="C1", mfc="none", ms=8)
+ax1.set_xlabel("x"); ax1.set_ylabel("f(x)"); ax1.set_title("Chords with h = 0.5 at x = 2")
+ax1.legend(fontsize=8, loc="upper left"); ax1.grid(alpha=0.3)
+
+hh = np.linspace(0.01, 1, 100)
+ax2.plot(hh, fwd_diff(f, a1, hh), color="C0", label=r"forward estimate $12 + 6h + h^2$")
+ax2.plot(hh, central_diff(f, a1, hh), color="C1", label=r"central estimate $12 + h^2$")
+ax2.axhline(12, color="gray", lw=1, label="exact f'(2) = 12")
+ax2.plot([0.1, 0.1], [central_diff(f, a1, 0.1), fwd_diff(f, a1, 0.1)], "k.", ms=9, label="hand example, h = 0.1")
+ax2.plot([h1, h1], [s_cen, s_fwd], "k:", lw=1)
+ax2.set_xlabel("step size h"); ax2.set_ylabel("slope estimate"); ax2.set_title("Slope estimate versus step size")
+ax2.legend(fontsize=8, loc="upper left"); ax2.grid(alpha=0.3)
+fig.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the central chord (slope $12.25$) is almost parallel to the tangent (slope $12$),
+while the forward chord (slope $15.25$) is visibly steeper. The one-sided chord picks up the
+curvature term $\tfrac{h}{2}f''(2) = 3$; the symmetric chord cancels it and keeps only
+$\tfrac{h^2}{6}f'''(2) = 0.25$. In the right panel the forward estimate $12 + 6h + h^2$ leaves
+$12$ with slope $f''(2)/2 = 6$, and the central one follows the flat parabola $12 + h^2$:
+these are the $O(h)$ and $O(h^2)$ of the table. The two black dots at $h = 0.1$ are the hand
+example, $12.61$ and $12.01$; the dotted segment at $h = 0.5$ is the gap between the two chords
+on the left.
 """)
 
 # ----------------------------------------------------------------------------- 2
@@ -177,6 +221,38 @@ print("numerical check:", central_diff(lambda w_: (sigmoid(w_ * x + b) - y)**2, 
 print("\nten sigmoid layers, best case gradient factor:", 0.25**10)
 """)
 
+nb.code(r"""
+# the same product layer by layer: one backward path through L layers, one pre-activation per layer
+rng_v = np.random.default_rng(7)               # a local generator, so the global rng stream is untouched
+depth = np.arange(1, 21)
+z_path = rng_v.standard_normal(depth.size)     # pre-activations z ~ N(0, 1)
+sig_prod = np.cumprod(sigmoid(z_path) * (1 - sigmoid(z_path)))
+tanh_prod = np.cumprod(1 - np.tanh(z_path)**2)
+
+plt.semilogy(depth, 0.25**depth, "k--", label=r"sigmoid, best case $0.25^L$")
+plt.semilogy(depth, sig_prod, "o-", ms=4, label=r"sigmoid, $z \sim N(0, 1)$")
+plt.semilogy(depth, tanh_prod, "s-", ms=4, label=r"tanh, $z \sim N(0, 1)$")
+plt.semilogy(depth, np.ones(depth.size), color="C2", label="ReLU, active path (factor 1)")
+plt.semilogy([10], [0.25**10], "ko")
+plt.annotate(r"$0.25^{10} \approx 9.5\times10^{-7}$", (10, 0.25**10), xytext=(12, 1e-5),
+             fontsize=8, arrowprops=dict(arrowstyle="->", lw=0.8))
+plt.xticks(np.arange(2, 21, 2))
+plt.xlabel("number of layers L"); plt.ylabel("product of activation derivatives")
+plt.title("Activation factors multiplied along one backward path")
+plt.legend(fontsize=8, loc="lower left"); plt.grid(alpha=0.3); plt.show()
+for L_ in (10, 20):
+    print(f"L = {L_}: sigmoid {sig_prod[L_ - 1]:.1e}   tanh {tanh_prod[L_ - 1]:.1e}   best-case sigmoid {0.25**L_:.1e}")
+""")
+
+nb.md(r"""
+**Notice that** even the best case, $0.25^L$, loses six orders of magnitude by $L = 10$ (the
+$9.5\times10^{-7}$ printed above), and realistic pre-activations do worse (about
+$3\times10^{-7}$ at $L = 10$ and $4\times10^{-14}$ at $L = 20$ here), because $\sigma'(z) < 1/4$
+whenever $z \ne 0$. $\tanh$, whose derivative peaks at $1$, decays much more slowly (about
+$2\times10^{-2}$ at $L = 10$), and an active ReLU path multiplies by exactly $1$. The weights,
+ignored here, multiply into the same product.
+""")
+
 # ----------------------------------------------------------------------------- 3
 nb.md(r"""
 ## 3. Partial derivatives and the gradient
@@ -212,19 +288,25 @@ p0 = np.array([1.0, 2.0])
 print("analytic gradient at (1,2):", grad_f2(p0), "  numerical:", grad_fd(f2, p0))
 print("norm of gradient:", np.linalg.norm(grad_f2(p0)))
 
-# contour plot with gradient arrows
+# contour plot with gradient arrows (both come from f2 and grad_f2, which accept stacked grids)
 xs = np.linspace(-3, 3, 200); ys = np.linspace(-3, 3, 200)
 X, Y = np.meshgrid(xs, ys)
-Z = X**2 + 3 * X * Y
+Z = f2(np.stack([X, Y]))
 plt.figure(figsize=(6.5, 5.5))
 cs = plt.contour(X, Y, Z, levels=20, cmap="viridis")
 plt.clabel(cs, inline=True, fontsize=7, fmt="%.0f")
+plt.contour(X, Y, Z, levels=[f2(p0)], colors="k", linewidths=2)
+plt.plot([], [], "k", lw=2, label=f"level set f = {f2(p0):g} through (1, 2)")
 qx, qy = np.meshgrid(np.linspace(-2.5, 2.5, 7), np.linspace(-2.5, 2.5, 7))
-gx, gy = 2 * qx + 3 * qy, 3 * qx
-plt.quiver(qx, qy, gx, gy, color="crimson", angles="xy", scale=120, width=0.004)
-plt.plot(*p0, "ko"); plt.annotate("(1, 2)", p0 + 0.1)
+gx, gy = grad_f2(np.stack([qx, qy]))
+plt.quiver(qx, qy, gx, gy, color="crimson", angles="xy", scale=120, width=0.004, label="gradient (scaled)")
+g0 = grad_f2(p0)
+plt.quiver(*p0, *g0, color="black", angles="xy", scale=120, width=0.007,
+           label=rf"$\nabla f(1, 2) = ({g0[0]:g}, {g0[1]:g})$")
+plt.plot(*p0, "ko"); plt.annotate("(1, 2)", p0, xytext=(-34, 6), textcoords="offset points")
 plt.gca().set_aspect("equal")
 plt.xlabel("x"); plt.ylabel("y"); plt.title(r"Level sets of $f = x^2 + 3xy$ with gradient arrows")
+plt.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=2)
 plt.show()
 """)
 
@@ -243,6 +325,9 @@ plt.plot(np.degrees(angles), numeric, "--", label="finite difference along u")
 plt.axhline(np.linalg.norm(g), color="gray", ls=":", label=r"$\|\nabla f\|$")
 plt.axhline(-np.linalg.norm(g), color="gray", ls=":")
 plt.axvline(np.degrees(grad_angle), color="crimson", lw=1, label="direction of gradient")
+for k, d in enumerate((90, 270)):
+    plt.axvline((np.degrees(grad_angle) + d) % 360, color="gray", ls="--", lw=1,
+                label="perpendicular: slope 0" if k == 0 else None)
 plt.xlabel("direction angle (degrees)"); plt.ylabel("directional derivative")
 plt.title("Slope in every direction at (1, 2)"); plt.legend(fontsize=8); plt.grid(alpha=0.3); plt.show()
 
@@ -254,14 +339,18 @@ print("slope perpendicular to gradient:", round(float(g @ perp), 12))
 
 nb.md(r"""
 In the contour plot every arrow crosses the level curve through its base at a right angle;
-where the contours are dense (steep terrain) the arrows are long. The sinusoid in the second
+where the contours are dense (steep terrain) the arrows are long. The black arrow is the
+gradient $(8, 3)$ at $(1, 2)$, and it is perpendicular to the thick level curve $f = 7$ through
+that point. The sinusoid in the second
 plot *is* the Cauchy–Schwarz inequality: $\nabla f^\top\mathbf{u} = \lVert\nabla f\rVert\cos\phi$,
 where $\phi$ is the angle between $\mathbf{u}$ and the gradient. The maximum
-$\lVert\nabla f\rVert = \sqrt{73} \approx 8.544$ occurs at $\phi = 0$; perpendicular to the gradient
-the slope is $0$ — moving along the level set.
+$\lVert\nabla f\rVert = \sqrt{73} \approx 8.544$ occurs at $\phi = 0$ ($20.6^\circ$); at the two
+grey dashed lines, $90^\circ$ either side of the gradient ($110.6^\circ$ and $290.6^\circ$), the
+slope is $0$ — moving along the level set.
 
 **Try it yourself:** change `f2` to the saddle $x^2 - y^2$ or to the Rosenbrock function
-$(1-x)^2 + 100(y-x^2)^2$. Where do the arrows become tiny?
+$(1-x)^2 + 100(y-x^2)^2$, and change `grad_f2` to match (check it against `grad_fd` first).
+Both plots are drawn from these two functions. Where do the arrows become tiny?
 """)
 
 # ----------------------------------------------------------------------------- 4
@@ -301,6 +390,7 @@ def jacobian_fd(F, x, h=1e-6):
 v0 = np.array([2.0, np.pi / 6])
 print("analytic Jacobian:\n", jac_polar(v0))
 print("numerical Jacobian:\n", jacobian_fd(polar, v0))
+print("max |analytic - numerical| =", np.max(np.abs(jac_polar(v0) - jacobian_fd(polar, v0))))
 print("determinant:", np.linalg.det(jac_polar(v0)), " (should equal r = 2)")
 
 # linearisation: predicted vs exact change for a perturbation delta, then shrink delta
@@ -335,7 +425,7 @@ print("same via two VJPs      :", jac_polar(v0).T @ (A.T @ gbar))
 """)
 
 nb.md(r"""
-The analytic and numerical Jacobians agree to $10^{-9}$, and the linearisation error falls on
+The analytic and numerical Jacobians agree to about $10^{-10}$, and the linearisation error falls on
 a line of slope 2 in the log-log plot — halve the step, quarter the error. The composed map's
 Jacobian is the *product* $J_{\mathbf{g}}J_{\mathbf{P}}$ (shapes $3\times 2 = (3\times 2)(2\times 2)$),
 and the backward pass of a network computes $J^\top\bar{\mathbf{g}}$ one factor at a time,
@@ -351,7 +441,8 @@ nb.md(r"""
 
 The Hessian $H_{ij} = \partial^2 f/\partial x_i\partial x_j$ is symmetric (Schwarz) and its
 eigenvalues are the curvatures along its eigenvectors. At a critical point ($\nabla f = 0$):
-all eigenvalues $> 0$ ⇒ minimum, all $< 0$ ⇒ maximum, mixed signs ⇒ saddle.
+all eigenvalues $> 0$ ⇒ minimum, all $< 0$ ⇒ maximum, mixed signs ⇒ saddle (even when some
+eigenvalues are zero). Zero eigenvalues with the rest of one sign leave the test inconclusive.
 
 We use $f(x,y) = x^4 - 2x^2 + y^2$ (a "double well"): critical points are $(\pm 1, 0)$ and
 $(0, 0)$, and we also look at $g(x,y) = -(x^2+y^2)$ and the guide's $x^2 + 3xy + 5y^2$.
@@ -372,10 +463,11 @@ def hessian_fd(f, x, h=1e-4):
 
 def classify(H, tol=1e-8):
     lam = np.linalg.eigvalsh(H)
+    if np.any(lam > tol) and np.any(lam < -tol):
+        return "saddle point", lam                  # mixed signs are conclusive, zeros or not
     if np.all(lam > tol):  return "local minimum", lam
     if np.all(lam < -tol): return "local maximum", lam
-    if np.any(np.abs(lam) <= tol): return "degenerate (inconclusive)", lam
-    return "saddle point", lam
+    return "degenerate (inconclusive)", lam         # some zeros, the rest of one sign
 
 dwell = lambda v: v[0]**4 - 2 * v[0]**2 + v[1]**2
 hess_dwell = lambda v: np.array([[12 * v[0]**2 - 4, 0.0], [0.0, 2.0]])
@@ -387,9 +479,11 @@ for cp in [np.array([1.0, 0.0]), np.array([-1.0, 0.0]), np.array([0.0, 0.0])]:
           f"   (numerical Hessian error {np.max(np.abs(H_an - H_num)):.1e})")
 
 print()
-for name, H in {"x^2+3xy+5y^2": np.array([[2., 3.], [3., 10.]]),
-                "x^2+3xy":      np.array([[2., 3.], [3., 0.]]),
-                "-(x^2+y^2)":   np.array([[-2., 0.], [0., -2.]])}.items():
+for name, H in {"x^2+3xy+5y^2":   np.array([[2., 3.], [3., 10.]]),
+                "x^2+3xy":        np.array([[2., 3.], [3., 0.]]),
+                "-(x^2+y^2)":     np.array([[-2., 0.], [0., -2.]]),
+                "diag(1, 0)":     np.diag([1., 0.]),
+                "diag(-1, 0, 2)": np.diag([-1., 0., 2.])}.items():
     kind, lam = classify(H)
     print(f"{name:14s} eigenvalues {lam.round(4)} -> {kind}")
 """)
@@ -404,32 +498,125 @@ ax = fig.add_subplot(1, 2, 1, projection="3d")
 ax.plot_surface(X, Y, Z, cmap="viridis", alpha=0.85, linewidth=0)
 ax.set_xlabel("x"); ax.set_ylabel("y"); ax.set_zlabel("f"); ax.set_title("Double well: two minima and a saddle")
 ax2 = fig.add_subplot(1, 2, 2)
-cs = ax2.contour(X, Y, Z, levels=25, cmap="viridis"); ax2.clabel(cs, inline=True, fontsize=6, fmt="%.1f")
+lv = np.arange(-3, 14) * 0.3                        # integer steps keep the level f = 0 exact; label every third
+cs = ax2.contour(X, Y, Z, levels=lv, cmap="viridis")
+ax2.clabel(cs, lv[::3], inline=True, fontsize=7, fmt="%.1f")
 ax2.plot([1, -1], [0, 0], "go", label="minima (eigenvalues 8, 2)")
 ax2.plot([0], [0], "r^", label="saddle (eigenvalues -4, 2)")
+ax2.set_aspect("equal")
 ax2.set_xlabel("x"); ax2.set_ylabel("y"); ax2.set_title("Level sets and critical points"); ax2.legend(fontsize=8)
 fig.tight_layout(); plt.show()
-
-# saddles dominate in high dimensions: random symmetric Hessians at "critical points"
-trials = 20000
-for n in (1, 2, 3, 4, 6, 8):
-    M = rng.standard_normal((trials, n, n)); M = (M + np.swapaxes(M, 1, 2)) / 2
-    lam = np.linalg.eigvalsh(M)
-    frac_min = np.mean(np.all(lam > 0, axis=1))
-    print(f"n = {n}: fraction of random symmetric matrices that are positive definite = {frac_min:.4f}"
-          f"   (coin-flip estimate 2^-n = {2.0**-n:.4f})")
 """)
 
 nb.md(r"""
 At $(\pm 1, 0)$ both eigenvalues are positive (bowl); at the origin the Hessian has
 eigenvalues $-4$ and $2$ — curving down along $x$, up along $y$ — a saddle, which is why the
-level sets there look like a cross. The last experiment shows how quickly "all curvatures
-positive" becomes rare as dimension grows — for Gaussian random matrices even faster than the
-coin-flip estimate $2^{-n}$, because eigenvalues of a random symmetric matrix repel each other
-and spread symmetrically about zero. In a high-dimensional landscape, a point with zero gradient
-is almost never a minimum. (A side note on `hessian_fd`: it uses `h = 1e-4`, much larger than for
-first derivatives, because the second-difference formula divides by $h^2$ and its round-off term
-is $\varepsilon/h^2$.)
+level set $f = 0$ crosses itself there. The extra matrix $\mathrm{diag}(-1, 0, 2)$ is classified
+as a saddle even though one eigenvalue is zero: once both signs appear, there is a direction
+along which $f$ curves down and one along which it curves up. Only $\mathrm{diag}(1, 0)$, a
+zero with the rest of one sign, is inconclusive. (A side note on `hessian_fd`: it uses
+`h = 1e-4`, much larger than for first derivatives, because the second-difference formula
+divides by $h^2$ and its round-off term is $\varepsilon/h^2$.)
+
+The curvature along a unit direction $\mathbf{u}$ is the second derivative of the
+one-dimensional slice $\varphi(t) = f(\mathbf{x}^* + t\mathbf{u})$, namely
+$\varphi''(0) = \mathbf{u}^\top H\mathbf{u}$. Let us slice the double well through its saddle.
+""")
+
+nb.code(r"""
+H0 = hess_dwell(np.zeros(2))                       # diag(-4, 2) at the saddle (0, 0)
+t = np.linspace(-1.2, 1.2, 241)
+slices = {"along x": (np.array([1.0, 0.0]), "C3"),
+          "along y": (np.array([0.0, 1.0]), "C0"),
+          "diagonal": (np.array([1.0, 1.0]) / np.sqrt(2), "C4")}
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+for name, (u, col) in slices.items():
+    curv = u @ H0 @ u
+    ax1.plot(t, dwell(np.outer(u, t)), color=col, label=f"{name}: curvature {curv:g}")
+    ax1.plot(t, 0.5 * curv * t**2, ":", color=col)
+ax1.plot([], [], "k:", label=r"dotted: $\frac{1}{2}(u^\top H u)\,t^2$")
+ax1.set_ylim(-1.5, 1.5)
+ax1.set_xlabel("t (distance from the saddle along u)"); ax1.set_ylabel("f(t u)")
+ax1.set_title("Slices through the saddle (0, 0)"); ax1.legend(fontsize=8, loc="lower center"); ax1.grid(alpha=0.3)
+
+phi = np.linspace(0, np.pi, 181)
+U_dir = np.stack([np.cos(phi), np.sin(phi)])       # unit directions as columns
+curv_phi = np.einsum("in,ij,jn->n", U_dir, H0, U_dir)
+lam0 = np.linalg.eigvalsh(H0)
+phi0 = np.degrees(np.arctan(np.sqrt(-lam0[0] / lam0[1])))   # where -4 cos^2 + 2 sin^2 = 0
+ax2.plot(np.degrees(phi), curv_phi, "k", label=r"$u^\top H u$, $u = (\cos\varphi, \sin\varphi)$")
+ax2.axhline(lam0[0], color="C3", ls="--", lw=1.2, label=f"smallest eigenvalue {lam0[0]:g}")
+ax2.axhline(lam0[1], color="C0", ls="--", lw=1.2, label=f"largest eigenvalue {lam0[1]:g}")
+ax2.axhline(0, color="gray", lw=0.5)
+ax2.plot([phi0, 180 - phi0], [0, 0], "ko", ms=5, label=f"zero at {phi0:.1f} and {180 - phi0:.1f} deg")
+ax2.set_ylim(-6.6, 2.6); ax2.set_xticks(np.arange(0, 181, 45))
+ax2.set_xlabel(r"direction angle $\varphi$ (degrees)"); ax2.set_ylabel(r"curvature $u^\top H u$")
+ax2.set_title("Curvature in every direction at the saddle")
+ax2.legend(fontsize=8, loc="lower center", ncol=2); ax2.grid(alpha=0.3)
+fig.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** each dotted parabola hugs its slice near $t = 0$: the slice curvature is exactly
+$\mathbf{u}^\top H\mathbf{u}$, which is $-4$ along $x$, $+2$ along $y$ and $-1$ along the
+diagonal — the average of the two eigenvalues, because the diagonal's squared components on the
+two eigenvectors are both $1/2$. (Along $y$ the slice *is* its parabola.) Farther out, the
+quartic term bends the $x$-slice back up into the two minima at $t = \pm 1$, so the quadratic
+model is only local. The right panel shows that the curvature in every direction lies between the
+smallest and the largest eigenvalue, reaches them exactly at the eigenvectors ($0^\circ$ and
+$90^\circ$) and changes sign at $54.7^\circ$ and $125.3^\circ$: a saddle curves down in some
+directions and up in others.
+
+How typical is a minimum? Treat random symmetric matrices as the Hessians at random critical
+points and count how often all their curvatures are positive.
+""")
+
+nb.code(r"""
+# saddles dominate in high dimensions: random symmetric "Hessians" at random critical points
+trials, fracs = 20000, {}
+for n in (1, 2, 3, 4, 6, 8):
+    M = rng.standard_normal((trials, n, n)); M = (M + np.swapaxes(M, 1, 2)) / 2
+    lam = np.linalg.eigvalsh(M)
+    fracs[n] = np.mean(np.all(lam > 0, axis=1))
+    print(f"n = {n}: fraction of random symmetric matrices that are positive definite = {fracs[n]:.4f}"
+          f"   (coin-flip estimate 2^-n = {2.0**-n:.4f})")
+
+# the eigenvalues of one large random symmetric matrix (a local generator: the global rng stream is unchanged)
+rng_b = np.random.default_rng(1)
+Mb = rng_b.standard_normal((200, 200)); Mb = (Mb + Mb.T) / 2
+lam_b = np.linalg.eigvalsh(Mb) / np.sqrt(200)
+print(f"\n200 x 200 matrix: fraction of positive eigenvalues = {np.mean(lam_b > 0):.3f}")
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+dims = np.array(sorted(fracs)); fr = np.array([fracs[d] for d in dims])
+seen = fr > 0
+nn = np.arange(1, 9)
+ax1.semilogy(dims[seen], fr[seen], "o-", label="measured (20,000 matrices)")
+ax1.semilogy(dims[~seen], np.full((~seen).sum(), 1 / trials), "v", color="C0", ms=8, label="none in 20,000")
+ax1.semilogy(nn, 2.0**-nn, "k--", label=r"coin-flip estimate $2^{-n}$")
+ax1.set_xlabel("dimension n"); ax1.set_ylabel("fraction positive definite")
+ax1.set_title("Random symmetric 'Hessians' that are minima"); ax1.legend(fontsize=8); ax1.grid(alpha=0.3)
+
+ax2.hist(lam_b, bins=30, density=True, color="C0", alpha=0.7, label="eigenvalues, n = 200")
+xx = np.linspace(-np.sqrt(2), np.sqrt(2), 200)
+ax2.plot(xx, np.sqrt(np.clip(2 - xx**2, 0, None)) / np.pi, "k", label="semicircle law")
+ax2.axvline(0, color="C3", lw=1.5, label="zero curvature")
+ax2.set_xlabel(r"eigenvalue / $\sqrt{n}$"); ax2.set_ylabel("density")
+ax2.set_ylim(0, 0.75)
+ax2.set_title("Curvatures of one random symmetric matrix"); ax2.legend(fontsize=8, loc="upper left"); ax2.grid(alpha=0.3)
+fig.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** from $n = 2$ on the measured fraction falls below the coin-flip line ($0.147$
+against $0.25$ at $n = 2$, $0.0021$ against $0.0625$ at $n = 4$), and not a single positive
+definite matrix turns up among 20,000 draws for $n = 6$ or $8$. The coin-flip estimate treats the
+$n$ eigenvalue signs as independent, but the eigenvalues of a random symmetric matrix repel each
+other, so finding all of them on one side of zero is much rarer. The right panel shows where they
+live: the curvatures fill a semicircle that is symmetric about zero, so about half of them
+($49.5\,\%$ here) are negative. In a high-dimensional landscape, a point with zero gradient is
+almost never a minimum.
 """)
 
 # ----------------------------------------------------------------------------- 6
@@ -451,8 +638,8 @@ def taylor_exp(x, k):
 xs = np.linspace(-2.5, 2.5, 400)
 plt.plot(xs, np.exp(xs), "k", lw=2.5, label="exp(x)")
 for k in (0, 1, 2, 3, 5):
-    plt.plot(xs, taylor_exp(xs, k), "--", label=f"degree {k}")
-plt.ylim(-1, 10); plt.xlabel("x"); plt.ylabel("value"); plt.title("Taylor polynomials of exp(x) about 0")
+    plt.plot(xs, taylor_exp(xs, k), "--", label=f"$T_{k}$, degree {k}")
+plt.ylim(-1.5, 12.5); plt.xlabel("x"); plt.ylabel("value"); plt.title("Taylor polynomials of exp(x) about 0")
 plt.legend(fontsize=8); plt.grid(alpha=0.3); plt.show()
 
 print("exp(0.5) =", np.exp(0.5))
@@ -470,8 +657,9 @@ plt.legend(fontsize=8); plt.grid(alpha=0.3); plt.show()
 """)
 
 nb.md(r"""
-Each extra term buys roughly two more correct digits at $x = 0.5$, and the log-log slopes
-come out as $2, 3, 4$ for degrees $1, 2, 3$ — the remainder is $O(h^{k+1})$ as promised.
+Each extra term buys roughly one more correct digit at $x = 0.5$ (the error falls by a factor
+of about $6$, $8$ and $10$, close to $(k+2)/x$), and the log-log slopes come out as $2, 3, 4$
+for degrees $1, 2, 3$ — the remainder is $O(h^{k+1})$ as promised.
 The polynomials are excellent near $0$ and useless far away: a Taylor model is *local*.
 
 The multivariate version, $f(\mathbf{x}+\boldsymbol{\delta}) \approx f + \nabla f^\top\boldsymbol{\delta} + \tfrac12\boldsymbol{\delta}^\top H\boldsymbol{\delta}$,
@@ -493,20 +681,72 @@ def run_gd(eta, steps=40):
         hist.append(quad(x))
     return np.array(hist)
 
+lmin, lmax = np.linalg.eigvalsh(H)[[0, -1]]
 for eta in (0.05, 1/6, 0.17, 0.19):
     hist = run_gd(eta)
-    plt.semilogy(hist, label=f"eta = {eta:.3f}")
-plt.axhline(1e-12, color="gray", lw=0.5)
-plt.xlabel("gradient step"); plt.ylabel("loss (log scale)"); plt.title(r"Stable iff $\eta < 2/\lambda_{\max} = 2/11 \approx 0.182$")
+    is_opt = np.isclose(eta, 2 / (lmin + lmax))    # the step that balances both directions
+    plt.semilogy(hist, label=f"eta = {eta:.3f}" + (r" $= 2/(\lambda_{\min}+\lambda_{\max})$" if is_opt else ""))
+plt.xlabel("gradient step"); plt.ylabel("loss (log scale)")
+plt.title(rf"Stable iff $\eta < 2/\lambda_{{\max}} = {2 / lmax:.3f}$")
 plt.legend(); plt.grid(alpha=0.3); plt.show()
 print("predicted contraction per step at eta = 1/6:", 1 - (1/6) * 1, "(flat dir) and", abs(1 - (1/6) * 11), "(sharp dir)")
 """)
 
 nb.md(r"""
-With $\eta = 0.19 > 2/11$ the loss explodes (the sharp direction is multiplied by $-1.09$ each
-step); with $\eta = 1/6$ both directions contract by $5/6$ per step. The learning rate is
-dictated by the *largest* curvature while progress along the *smallest* curvature is what
-takes long — the conditioning story of Module 05.
+With $\eta = 0.19 > 2/11$ the loss dips for two steps (the large flat component still shrinks
+by a factor $0.81$ per step) and then explodes, because the sharp direction is multiplied by
+$-1.09$ each step; with $\eta = 1/6$ both directions contract by $5/6$ per step. The learning
+rate is dictated by the *largest* curvature while progress along the *smallest* curvature is
+what takes long — the conditioning story of Module 05. To see the two directions separately,
+follow the iterates themselves and split each one into its components along the eigenvectors
+of $H$.
+""")
+
+nb.code(r"""
+lam_H, Q = np.linalg.eigh(H)                       # eigenvalues (ascending) and eigenvectors
+
+def gd_path(eta, steps):
+    x = x_start.copy(); path = [x.copy()]
+    for _ in range(steps):
+        x = x - eta * (H @ x); path.append(x.copy())
+    return np.array(path)
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2))
+gx_, gy_ = np.meshgrid(np.linspace(-2.2, 4, 200), np.linspace(-3, 2.5, 200))
+Zq = 0.5 * (H[0, 0] * gx_**2 + 2 * H[0, 1] * gx_ * gy_ + H[1, 1] * gy_**2)
+ax1.contour(gx_, gy_, Zq, levels=[0.5, 2, 5, 11, 20, 35], colors="gray", linewidths=0.8)
+for eta, col, steps in ((1/6, "C1", 12), (0.19, "C3", 7)):
+    P_ = gd_path(eta, steps)
+    ax1.plot(P_[:, 0], P_[:, 1], "o-", color=col, ms=3, lw=1, label=f"eta = {eta:.3f}, {steps} steps")
+ax1.plot(*x_start, "ko", label="start"); ax1.plot(0, 0, "k*", ms=10, label="minimum")
+for i, col in enumerate(["C0", "C2"]):
+    q = Q[:, i] * np.sign(Q[1, i])                 # orient both eigenvectors upwards
+    ax1.annotate("", xy=1.2 * q, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color=col, lw=1.8))
+    ax1.text(*(1.25 * q + np.array([0.0, 0.12])), rf"$\lambda = {lam_H[i]:.0f}$", color=col, fontsize=9, ha="center")
+ax1.set_aspect("equal"); ax1.set_xlabel("x"); ax1.set_ylabel("y")
+ax1.set_title("Gradient-descent iterates on the bowl"); ax1.legend(fontsize=7, loc="lower left")
+
+k = np.arange(41)
+for eta, ls in ((1/6, "-"), (0.19, "--")):
+    C_ = np.abs(gd_path(eta, 40) @ Q)              # |component| along each eigenvector
+    for i, col in enumerate(["C0", "C2"]):
+        ax2.semilogy(k, C_[:, i], ls, color=col, label=f"eta = {eta:.3f}, lambda = {lam_H[i]:.0f}")
+    ax2.semilogy(k, C_[0, 1] * np.abs(1 - eta * lam_H[1])**k, "k:", lw=0.8)
+ax2.plot([], [], "k:", lw=0.8, label=r"prediction $|1-\eta\lambda_{\max}|^k$")
+ax2.set_xlabel("gradient step k"); ax2.set_ylabel("|component along eigenvector|")
+ax2.set_title(r"Each eigendirection scales by $|1-\eta\lambda|$ per step")
+ax2.legend(fontsize=7); ax2.grid(alpha=0.3)
+fig.tight_layout(); plt.show()
+print("start components |Q^T x0|:", np.abs(Q.T @ x_start).round(3), " eigenvalues:", lam_H)
+""")
+
+nb.md(r"""
+**Notice that** at $\eta = 1/6$ the two solid lines fall in parallel: both components shrink by
+exactly $5/6$ per step (from $3.48$ and $0.95$ to below $10^{-2}$ after 40 steps), while the
+orange path still zig-zags across the valley, because the sharp factor $1 - 11/6 = -5/6$ flips
+its sign every step. At $\eta = 0.19$ the flat component converges even faster (factor $0.81$),
+but the sharp one grows by $1.09$ per step to about $30$. The exploding red loss curve above is
+this single direction, and its sign flips are the widening zig-zag of the red path on the left.
 
 **Try it yourself:** replace `H` by `[[1, 0], [0, 100]]` (condition number 100). How many steps
 does the flat direction now need at the largest stable learning rate?
@@ -571,7 +811,9 @@ print("np.linalg.lstsq agrees:", np.allclose(np.linalg.lstsq(B3, b3, rcond=None)
 """)
 
 nb.md(r"""
-Every identity matches finite differences to $10^{-9}$ or better, and the row labelled
+Every identity matches finite differences to about $10^{-8}$ or better (absolute error; the
+least-squares gradient has entries of size $\sim 10$, and the last digits vary from machine to
+machine), and the row labelled
 `!= 2 A x` shows a large error — the $A^\top$ is not optional for a non-symmetric $A$. The
 least-squares block is Module 02's normal equations rediscovered as "set the gradient to
 zero": at $\mathbf{x}^*$ the residual is orthogonal to the columns of $B$ (that is what
@@ -618,9 +860,12 @@ print("relative error    :", np.linalg.norm(bce_grad(w0) - grad_fd(bce_loss, w0)
 
 nb.code(r"""
 w, eta = np.zeros(3), 0.5
-hist = [bce_loss(w)]
+hist, gnorm_hist, gap_hist = [bce_loss(w)], [], []
 for step in range(300):
-    w = w - eta * bce_grad(w)
+    g_w = bce_grad(w)
+    gnorm_hist.append(np.linalg.norm(g_w))                       # recorded for the next plot
+    gap_hist.append(abs(sigmoid(X @ w).mean() - y.mean()))       # calibration gap before the step
+    w = w - eta * g_w
     hist.append(bce_loss(w))
 
 plt.plot(hist); plt.xlabel("gradient step"); plt.ylabel("binary cross-entropy")
@@ -640,11 +885,45 @@ $10^{-10}$ in relative error, the loss decreases monotonically with a reasonable
 (logistic loss is convex), and at the end the mean predicted probability equals the empirical
 positive rate — the intercept component of "$\nabla L = 0$" reads $\sum_i p_i = \sum_i y_i$.
 The learned weights sit near the true ones, with the discrepancy you would expect from 200 noisy
-labels.
+labels. The next plot shows the fitted boundary and follows the calibration gap during training.
+""")
+
+nb.code(r"""
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2))
+ax1.scatter(X_raw[y == 1, 0], X_raw[y == 1, 1], s=12, c="C1", label="y = 1")
+ax1.scatter(X_raw[y == 0, 0], X_raw[y == 0, 1], s=12, c="C0", marker="x", label="y = 0")
+x1 = np.linspace(-3, 3, 50)
+ax1.plot(x1, -(w[0] + w[1] * x1) / w[2], "k", label="learned boundary")
+ax1.plot(x1, -(w_true[0] + w_true[1] * x1) / w_true[2], "k--", label="true boundary")
+ax1.set_xlim(-3, 3); ax1.set_ylim(-3, 3)
+ax1.set_xlabel("feature 1"); ax1.set_ylabel("feature 2")
+ax1.set_title("Data and decision boundaries (p = 0.5)"); ax1.legend(fontsize=8, loc="upper left", framealpha=0.9)
+
+ax2.semilogy(gnorm_hist, label=r"$\|\nabla L\|$")
+ax2.semilogy(gap_hist, label=r"calibration gap |mean p - mean y|")
+ax2.set_xlabel("gradient step"); ax2.set_ylabel("magnitude (log scale)")
+ax2.set_title(r"Gradient $\to 0$ means calibration in aggregate"); ax2.legend(fontsize=8); ax2.grid(alpha=0.3)
+fig.tight_layout(); plt.show()
+
+print(f"calibration gap: start {gap_hist[0]:.4f}, peak {max(gap_hist):.4f} at step {int(np.argmax(gap_hist))}, "
+      f"end {abs(sigmoid(X @ w).mean() - y.mean()):.1e}")
+print("intercept component of the final gradient:", bce_grad(w)[0], " = mean p - mean y")
+""")
+
+nb.md(r"""
+**Notice that** the learned boundary lies almost on top of the true one, and that the
+calibration gap is one coordinate of the gradient: because the first column of $X$ is all ones,
+the intercept component of $\nabla L$ is exactly $\frac1n\sum_i (p_i - y_i)$, the mean
+prediction minus the positive rate. The gap starts at $0.005$ (every $p_i = 0.5$ against a
+positive rate of $0.505$), rises briefly to about $0.017$ near step 8 while the slopes are being
+learned, then falls in parallel with $\lVert\nabla L\rVert$ (which ends near $3\times10^{-4}$)
+to about $6\times10^{-5}$. Aggregate calibration is not an extra property of logistic regression;
+it is the intercept component of $\nabla L = \mathbf{0}$.
 
 **Try it yourself:** set `eta = 5.0`. Does the convex loss still decrease at every step? Then
-replace `bce_loss` by the squared error `np.mean((sigmoid(X @ w) - y)**2)` and its gradient
-`X.T @ ((p - y) * p * (1 - p)) / n` — compare the speed of training and the final calibration.
+replace `bce_loss` by the squared error `np.mean((sigmoid(X @ w) - y)**2)` and `bce_grad` by its
+gradient `2 * X.T @ ((p - y) * p * (1 - p)) / n` (check it with `grad_fd` first: the factor $2$
+from the square is easy to drop) — compare the speed of training and the final calibration.
 """)
 
 # ----------------------------------------------------------------------------- summary
@@ -799,7 +1078,7 @@ try:
 except Exception:
     got, exp_ = None, None
 check_close('gradient of a 4-D function matches the reference', got, exp_, tol=1e-7)
-check('grad_fd returns an array with the shape of x', got is not None and np.shape(got) == (4,))
+check('grad_fd returns an array with the shape of x', got is not None and np.shape(got) == (4,));
 """,
     explanation_md=r"""
 The central difference cancels the even-order Taylor terms, so its error is $O(h^2)$ rather
@@ -872,13 +1151,13 @@ check('best step size lies between 1e-7 and 1e-4 (round-off vs truncation balanc
       hint='think about where the two error sources are equal')
 check('best error is below 1e-8', errs is not None and float(np.min(errs)) < 1e-8)
 check('error at h = 1e-13 is worse than at h = 1e-5 (round-off dominates)',
-      errs is not None and errs[np.argmin(np.abs(hs - 1e-13))] > errs[np.argmin(np.abs(hs - 1e-5))])
+      errs is not None and errs[np.argmin(np.abs(hs - 1e-13))] > errs[np.argmin(np.abs(hs - 1e-5))]);
 """,
     explanation_md=r"""
 The error has two parts: truncation, $\approx \tfrac{h^2}{6}|f'''(x)|$, which falls as $h$
 shrinks, and round-off, $\approx \varepsilon|f(x)|/h$ with $\varepsilon \approx 2.2\times10^{-16}$,
 which grows. They balance near $h \approx \varepsilon^{1/3} \approx 6\times 10^{-6}$, where the
-error bottoms out around $10^{-10}$. Choosing a "tiny" $h = 10^{-13}$ gives an estimate that is
+error bottoms out around $10^{-11}$ to $10^{-10}$ ($3\times10^{-11}$ here). Choosing a "tiny" $h = 10^{-13}$ gives an estimate that is
 wrong in the third or fourth significant digit — the most common finite-difference mistake.
 """)
 
@@ -945,7 +1224,7 @@ try:
     got = d_relu(np.array([-1.0, 0.0, 2.0]))
 except Exception:
     got = None
-check_close("ReLU' at (-1, 0, 2) is (0, 0, 1)", got, np.array([0.0, 0.0, 1.0]))
+check_close("ReLU' at (-1, 0, 2) is (0, 0, 1)", got, np.array([0.0, 0.0, 1.0]));
 """,
     explanation_md=r"""
 Writing $\sigma = (1+e^{-z})^{-1}$ and applying the chain rule gives
@@ -1031,7 +1310,7 @@ try:
     got_c = grad_f4(np.array([-0.4, 0.9]))
 except Exception:
     got_c = None
-check_close('matches a finite-difference gradient at (-0.4, 0.9)', got_c, reference_grad_fd(f4, np.array([-0.4, 0.9])), tol=1e-6)
+check_close('matches a finite-difference gradient at (-0.4, 0.9)', got_c, reference_grad_fd(f4, np.array([-0.4, 0.9])), tol=1e-6);
 """, A=H4A, B=H4B),
     explanation_md=r"""
 Treat $y$ as a constant when differentiating in $x$: $\partial_x(x^2 y) = 2xy$,
@@ -1042,7 +1321,7 @@ The classic slip is writing $\cos(xy)$ without the inner factor — the finite-d
 catches it immediately.
 """)
 
-# ----------------------------------------------------------------------------- Ex 5
+# ----------------------------------------------------------------------------- Ex 6
 SOL5 = r"""
 def F5(v):
     x, y = v
@@ -1095,7 +1374,7 @@ try:
     lin_err = np.linalg.norm(F5(v0 + d) - F5(v0) - jac_F5(v0) @ d)
 except Exception:
     lin_err = None
-check('linearisation error for |delta| ~ 2e-3 is below 1e-5 (quadratic in delta)', lin_err is not None and lin_err < 1e-5)
+check('linearisation error for |delta| ~ 2e-3 is below 1e-5 (quadratic in delta)', lin_err is not None and lin_err < 1e-5);
 """, J=H5),
     explanation_md=r"""
 Each row is the gradient of one output component, written as a row: $\nabla(xy) = (y, x)$,
@@ -1105,7 +1384,7 @@ transposed. The linearisation error scales with $\lVert\boldsymbol{\delta}\rVert
 size $2\times10^{-3}$ gives an error of order $10^{-6}$.
 """)
 
-# ----------------------------------------------------------------------------- Ex 6
+# ----------------------------------------------------------------------------- Ex 7
 SOL6 = r"""
 def g6(v):
     x, y = v
@@ -1122,13 +1401,13 @@ def hess_g6(v):
 
 def classify(H, tol=1e-8):
     lam = np.linalg.eigvalsh(H)
+    if np.any(lam > tol) and np.any(lam < -tol):
+        return "saddle"          # mixed signs settle it, whatever the zero eigenvalues do
     if np.all(lam > tol):
         return "minimum"
     if np.all(lam < -tol):
         return "maximum"
-    if np.any(np.abs(lam) <= tol):
-        return "degenerate"
-    return "saddle"
+    return "degenerate"          # some zeros, the rest of one sign: second-order test inconclusive
 """
 run_solution(SOL6)
 eig11 = np.linalg.eigvalsh(NS["hess_g6"](np.array([1.0, 1.0])))
@@ -1142,11 +1421,14 @@ points are $(0,0)$, $(1,1)$ and $(-1,-1)$ — verify this from $\nabla g = \math
 
 1. Implement `hess_g6(v)` returning the $2\times2$ Hessian (an array).
 2. Implement `classify(H, tol=1e-8)` that returns one of the strings `"minimum"`, `"maximum"`,
-   `"saddle"` or `"degenerate"` from the eigenvalues of a symmetric matrix `H`
-   (use `np.linalg.eigvalsh`; treat eigenvalues with $|\lambda| \le$ `tol` as zero).
+   `"saddle"` or `"degenerate"` from the eigenvalues of a symmetric matrix `H` of any size
+   (use `np.linalg.eigvalsh`; treat eigenvalues with $|\lambda| \le$ `tol` as zero). Mixed signs
+   mean a saddle even if some eigenvalues are zero; zeros with the rest of one sign are
+   `"degenerate"`.
 
 The hidden checks look at the eigenvalues at $(1, 1)$ and the classification of the two kinds of
-critical point.
+critical point; another check compares your Hessian at $(0.5, -1)$ with finite differences of
+`grad_g6`.
 """,
     starter=r"""
 def g6(v):
@@ -1185,6 +1467,15 @@ check_hash('hidden: classification of the origin', c0, '__C0__')
 check_hash('hidden: classification of (1, 1)', c1, '__C1__')
 check('(1, 1) and (-1, -1) are classified the same way', c1 is not None and c1 == cm)
 try:
+    # every critical point has x = y, so also test a point with x != y: H is the Jacobian of the gradient
+    v = np.array([0.5, -1.0])
+    H_ref = np.column_stack([(grad_g6(v + 1e-6 * e) - grad_g6(v - 1e-6 * e)) / 2e-6 for e in np.eye(2)])
+    got = hess_g6(v)
+except Exception:
+    got, H_ref = None, None
+check_close('Hessian at (0.5, -1) matches finite differences of the gradient', got, H_ref, tol=1e-5,
+            hint='check the sign of the mixed partial and which diagonal entry uses x or y')
+try:
     got = classify(np.array([[-2.0, 0.0], [0.0, -1.0]]))
 except Exception:
     got = None
@@ -1193,7 +1484,12 @@ try:
     got = classify(np.array([[1.0, 0.0], [0.0, 0.0]]))
 except Exception:
     got = None
-check('a zero eigenvalue is degenerate', got == 'degenerate')
+check('a zero eigenvalue with the rest positive is degenerate', got == 'degenerate')
+try:
+    got = classify(np.diag([-1.0, 0.0, 2.0]))
+except Exception:
+    got = None
+check('mixed signs are a saddle even with a zero eigenvalue (3 x 3)', got == 'saddle');
 """, E=H6E, C0=H6C0, C1=H6C1),
     explanation_md=r"""
 Differentiating the gradient once more gives $g_{xx} = 12x^2$, $g_{yy} = 12y^2$ and
@@ -1202,9 +1498,16 @@ $\begin{pmatrix}12 & -4\\ -4 & 12\end{pmatrix}$ with eigenvalues $8$ and $16$ �
 minimum. At the origin it is $\begin{pmatrix}0 & -4\\ -4 & 0\end{pmatrix}$ with eigenvalues
 $\pm 4$ — a saddle: $g$ decreases along $(1,1)$ and increases along $(1,-1)$. Working with
 eigenvalues rather than the 2-D determinant shortcut makes `classify` work in any dimension.
+Test for mixed signs *first*: a critical point with Hessian $\mathrm{diag}(-1, 0, 2)$ is a
+saddle, because the function has a strict maximum along one eigenvector and a strict minimum
+along another, whatever happens along the zero direction. Only zeros with the rest of one sign leave the second-order test inconclusive.
+Because all three critical points lie on the line $x = y$, a Hessian with the wrong sign of
+$g_{xy}$ or with $g_{xx}$ and $g_{yy}$ swapped would classify them correctly; the
+finite-difference check at $(0.5, -1)$, where the exact Hessian is
+$\begin{pmatrix}3 & -4\\ -4 & 12\end{pmatrix}$, catches both mistakes.
 """)
 
-# ----------------------------------------------------------------------------- Ex 7
+# ----------------------------------------------------------------------------- Ex 8
 SOL7 = r"""
 from math import factorial
 
@@ -1266,7 +1569,7 @@ try:
     got = taylor_eval(taylor_coeffs([np.e, np.e, np.e]), 1.0, 1.1)
 except Exception:
     got = None
-check_close('expansion of exp about a = 1 evaluated at 1.1', got, np.e * (1 + 0.1 + 0.005), tol=1e-9)
+check_close('expansion of exp about a = 1 evaluated at 1.1', got, np.e * (1 + 0.1 + 0.005), tol=1e-9);
 """, C=H7),
     explanation_md=r"""
 Taylor's theorem matches the polynomial's derivatives to the function's at the base point;
@@ -1277,7 +1580,7 @@ $|x-a|^{k+1}$, which is why the check insists the error increase with $x$. Forge
 factorial is the usual mistake; forgetting to expand in $(x - a)$ rather than $x$ is the second.
 """)
 
-# ----------------------------------------------------------------------------- Ex 8
+# ----------------------------------------------------------------------------- Ex 9
 SOL8 = r"""
 def ls_loss(x, A, b):
     r = A @ x - b
@@ -1349,18 +1652,20 @@ except Exception:
     xs, g_star = None, None
 check_hash('hidden: least-squares solution', xs, '__X__')
 check('gradient vanishes at the normal-equation solution', g_star is not None and np.linalg.norm(g_star) < 1e-9)
-check('normal-equation solution agrees with np.linalg.lstsq', xs is not None and np.allclose(xs, np.linalg.lstsq(A, b, rcond=None)[0]))
+check('normal-equation solution agrees with np.linalg.lstsq', xs is not None and np.allclose(xs, np.linalg.lstsq(A, b, rcond=None)[0]));
 """, G=H8G, X=H8X),
     explanation_md=r"""
 Expanding $\lVert A\mathbf{x}-\mathbf{b}\rVert^2 = \mathbf{x}^\top A^\top A\mathbf{x} - 2\mathbf{b}^\top A\mathbf{x} + \mathbf{b}^\top\mathbf{b}$
 and differentiating term by term gives $2A^\top A\mathbf{x} - 2A^\top\mathbf{b} = 2A^\top(A\mathbf{x}-\mathbf{b})$.
-Setting this to zero is the normal equations, so the least-squares solution of Module 02 is the
-unique critical point of a convex quadratic (Hessian $2A^\top A \succeq 0$). The common bug is
+Setting this to zero is the normal equations. The Hessian $2A^\top A$ is always $\succeq 0$, so
+the loss is a convex quadratic, and when $A$ has full column rank (as this $8\times 3$ Gaussian
+$A$ does) it is $\succ 0$, so the least-squares solution of Module 02 is the *unique* critical
+point and the global minimum. The common bug is
 $2A(A\mathbf{x}-\mathbf{b})$ — wrong shape whenever $A$ is not square, and wrong values even when
 it is; the finite-difference check exposes it.
 """)
 
-# ----------------------------------------------------------------------------- Ex 9
+# ----------------------------------------------------------------------------- Ex 10
 SOL9 = r"""
 def bce_loss(w, X, y):
     z = X @ w
@@ -1430,7 +1735,7 @@ try:
     L_after = float(bce_loss(w - 0.5 * g, X, y))
 except Exception:
     L_after = None
-check('one gradient step (eta = 0.5) lowers the loss', L is not None and L_after is not None and L_after < L)
+check('one gradient step (eta = 0.5) lowers the loss', L is not None and L_after is not None and L_after < L);
 """, L=H9L, G=H9G),
     explanation_md=r"""
 With $p = \sigma(z)$, $\partial L_i/\partial p = (p-y)/(p(1-p))$ and $dp/dz = p(1-p)$; the
@@ -1531,7 +1836,7 @@ try:
 except Exception:
     lam2 = None
 check_hash('hidden: largest curvature of the quartic at x0 (2 decimals)', lam2, '__LAM__', decimals=2)
-check('stability limit 2/lambda_max for the quartic lies between 0.11 and 0.13', lam2 is not None and 0.11 < 2 / lam2 < 0.13)
+check('stability limit 2/lambda_max for the quartic lies between 0.11 and 0.13', lam2 is not None and 0.11 < 2 / lam2 < 0.13);
 """, LAM=H11L),
     explanation_md=r"""
 Since $\nabla f(\mathbf{x} + h\mathbf{v}) \approx \nabla f(\mathbf{x}) + hH\mathbf{v}$ (the first-order
@@ -1541,9 +1846,11 @@ isolates $H\mathbf{v}$ with $O(h^2)$ error — two gradient evaluations, no Hess
 multiplication by $H$ amplifies that component the most; the Rayleigh quotient
 $\mathbf{v}^\top H\mathbf{v}$ returns the eigenvalue. For the quartic, the exact Hessian is
 $\mathrm{diag}(12x_i^2) + 2M$, whose largest eigenvalue at $\mathbf{x}_0$ is about $16.6$, so gradient
-descent there would need $\eta < 0.12$. Autodiff frameworks compute the same $H\mathbf{v}$ exactly
-with a forward-over-reverse pass (`torch.autograd.functional.hvp`), and this is how the
-"sharpness" of a trained network is measured in practice.
+descent there would need $\eta < 0.12$. Autodiff frameworks compute the same $H\mathbf{v}$
+exactly, without finite differences: forward-over-reverse with `torch.func.jvp(torch.func.grad(f), ...)`
+or `jax.jvp(jax.grad(f), ...)`, or reverse-over-reverse ("double backward") as in
+`torch.autograd.functional.hvp`. This is how the "sharpness" of a trained network is measured in
+practice.
 """)
 
 # ----------------------------------------------------------------------------- Ex 12 (project)

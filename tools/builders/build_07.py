@@ -5,7 +5,7 @@ build_07.py — generates lesson.ipynb, exercises.ipynb and solutions.ipynb for
 
 Run from the repository root:
 
-    python3 _authoring/builders/build_07.py
+    python3 tools/builders/build_07.py
     python3 tools/run_notebooks.py part-3-probability/07-probability-foundations
 
 All hidden answers are computed here by *executing* the reference solutions and hashing
@@ -34,8 +34,8 @@ or keep it open alongside. Every section below mirrors a numbered section of the
 dice and coins to watch frequencies settle on probabilities, work through the two-stage manufacturing
 tree and the diagnostic-test example (including a plot of PPV against prevalence), simulate Monty Hall,
 draw PMFs, PDFs and CDFs, check linearity of expectation on *dependent* variables, test Chebyshev's
-inequality, estimate $\pi$ by Monte Carlo and watch the error fall like $1/\sqrt{n}$, and finally build a
-naive Bayes spam filter by hand and verify it against scikit-learn.
+inequality, estimate $\pi$ by Monte Carlo and watch the error fall like $1/\sqrt{n}$, check the birthday
+problem by simulation, and finally build a naive Bayes spam filter by hand and verify it against scikit-learn.
 
 Everything is plain NumPy first; library calls appear only afterwards, to confirm the hand computation.
 """)
@@ -84,11 +84,13 @@ fig, axes = plt.subplots(1, 3, figsize=(10, 3), sharey=True)
 for ax, n_rolls in zip(axes, (60, 600, 60_000)):
     rolls = rng.integers(1, 7, size=n_rolls)
     freq = np.array([(rolls == f).mean() for f in faces])
-    ax.bar(faces, freq, alpha=0.8)
-    ax.axhline(1/6, color="k", ls="--")
+    ax.bar(faces, freq, alpha=0.8, label="observed frequency")
+    ax.axhline(1/6, color="k", ls="--", label="true probability 1/6")
+    ax.set_xticks(faces)
     ax.set_title(f"{n_rolls} rolls"); ax.set_xlabel("face")
 axes[0].set_ylabel("relative frequency")
-fig.suptitle("Empirical PMF of a fair die vs the true value 1/6 (dashed)")
+axes[2].legend(fontsize=8, loc="upper center")       # the 60,000-roll panel has room above its bars
+fig.suptitle("Empirical PMF of a fair die vs the true value 1/6")
 plt.tight_layout(); plt.show()
 """)
 
@@ -179,15 +181,66 @@ print(f"independence test: P(D1) P(D2) = {p_d1 * p_d2:.5f}  vs  P(D1 and D2) = {
 n_parts = 200_000
 d1 = rng.random(n_parts) < p_d1
 d2 = rng.random(n_parts) < np.where(d1, p_d2_given_d1, p_d2_given_not_d1)
-print(f"\nsimulation: P(D2) ~ {d2.mean():.4f}   P(D1 | D2) ~ {d1[d2].mean():.4f}   P(defective) ~ {(d1 | d2).mean():.4f}")
+p_hat = d1[d2].mean()                                   # estimated from the d2.sum() parts that have D2 only
+se_hat = np.sqrt(p_hat * (1 - p_hat) / d2.sum())
+print(f"\nsimulation: P(D2) ~ {d2.mean():.4f}   P(D1 | D2) ~ {p_hat:.4f} +/- {se_hat:.4f} "
+      f"(from only {d2.sum()} parts with D2)   P(defective) ~ {(d1 | d2).mean():.4f}")
 """)
 
 nb.md(r"""
 Two things to notice. First, the simulation of "conditioning" is literally *filtering*: `d1[d2]`
 keeps only the parts for which $D_2$ happened and asks how often $D_1$ holds among them — the new,
-smaller sample space. Second, $P(D_1 \mid D_2) \approx 0.17$ is more than four times $P(D_1) = 0.04$:
-knowing about stage-2 damage changes what you believe about stage 1, which is exactly what
-"dependent" means.
+smaller sample space. That is also why the simulated $P(D_1 \mid D_2)$ is the noisiest of the three
+estimates: it rests on the few thousand parts with $D_2$, not on all 200,000, so its standard error
+(printed next to it) is more than ten times those of the other two, and a distance of about two
+standard errors from the exact $0.1724$ is ordinary noise. Second, $P(D_1 \mid D_2) \approx 0.17$ is
+more than four times $P(D_1) = 0.04$: knowing about stage-2 damage changes what you believe about
+stage 1, which is exactly what "dependent" means.
+
+The same tree in natural frequencies: out of 10,000 parts, $40$ are damaged at both stages, $360$ only
+at stage 1, $192$ only at stage 2 and $9{,}408$ not at all. The next figure draws every one of them.
+""")
+
+nb.code(r"""
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
+
+n_grid = 10_000
+grid_counts = {k: int(round(v * n_grid)) for k, v in leaves.items()}     # 40, 360, 192, 9408
+colours = ["C3", "C1", "C0", "0.85"]
+cmap4 = ListedColormap(colours)
+codes = np.repeat(np.arange(4), list(grid_counts.values()))
+codes = codes[np.random.default_rng(7).permutation(n_grid)].reshape(100, 100)   # shuffle positions only
+n_d2 = grid_counts["D1 and D2"] + grid_counts["not D1 and D2"]                   # 232 parts with D2
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.6), gridspec_kw={"width_ratios": [1, 1.25]})
+ax1.imshow(codes, cmap=cmap4, vmin=-0.5, vmax=3.5, interpolation="nearest")
+ax1.set_xticks([]); ax1.set_yticks([])
+ax1.set_xlabel("100 parts per row"); ax1.set_ylabel("100 rows")
+ax1.set_title("All 10,000 parts")
+ax1.legend(handles=[Patch(color=c, label=f"{k}: {v:,}") for (k, v), c in zip(grid_counts.items(), colours)],
+           loc="upper center", bbox_to_anchor=(0.5, -0.09), ncol=2, fontsize=8)
+
+sub = np.r_[np.zeros(grid_counts["D1 and D2"]), np.full(grid_counts["not D1 and D2"], 2)].reshape(8, 29)
+ax2.imshow(sub, cmap=cmap4, vmin=-0.5, vmax=3.5, interpolation="nearest")
+ax2.set_xticks(np.arange(-0.5, 29), minor=True); ax2.set_yticks(np.arange(-0.5, 8), minor=True)
+ax2.grid(which="minor", color="white", lw=0.8); ax2.tick_params(which="both", length=0)
+ax2.set_xticks([]); ax2.set_yticks([])
+ax2.set_xlabel("29 parts per row"); ax2.set_ylabel("8 rows")
+ax2.set_title(f"Only the {n_d2} parts with stage-2 damage:\n"
+              f"P(D1 | D2) = {grid_counts['D1 and D2']}/{n_d2} = {grid_counts['D1 and D2'] / n_d2:.3f}")
+ax2.legend(handles=[Patch(color=colours[0], label=f"D1 and D2: {grid_counts['D1 and D2']}"),
+                    Patch(color=colours[2], label=f"not D1 and D2: {grid_counts['not D1 and D2']}")],
+           loc="upper center", bbox_to_anchor=(0.5, -0.3), ncol=2, fontsize=8)
+fig.suptitle("Conditioning on D2 = throwing away every part without stage-2 damage")
+plt.tight_layout(rect=(0, 0, 1, 0.95)); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the 40 red parts are almost invisible among all 10,000 — that is $P(D_1 \cap D_2) = 0.004$ —
+but in the right panel, where the 9,768 parts without stage-2 damage have been thrown away, they fill
+$40/232 = 17\%$ of the picture. Conditioning does not change any count; it changes the denominator. The
+orange parts (damaged at stage 1 only) disappear entirely, because they do not belong to the new sample space.
 """)
 
 # ---------------------------------------------------------------- 4. Bayes
@@ -242,21 +295,72 @@ print(f"after a second positive test: odds {post_odds_2:.3f} -> probability {pos
 print(f"prevalence at which PPV reaches 50%: (1 - sp) / (se + 1 - sp) = {(1 - sp) / (se + 1 - sp):.4f}")
 """)
 
+nb.md(r"""
+The odds form makes sequential evidence simple: every further conditionally independent positive
+result multiplies the odds by the same $\text{LR}^+ = 19.8$, and a negative result multiplies them by
+$\text{LR}^- = (1 - \text{se})/\text{sp} = 0.01/0.95$. Taking logarithms turns the products into sums,
+so we plot the posterior both ways.
+""")
+
+nb.code(r"""
+lr_neg = (1 - se) / sp                                   # likelihood ratio of a negative result
+n_tests = np.arange(0, 5)                                # number of positive results so far
+log_odds = np.log(prior_odds) + n_tests * np.log(lr_pos)
+post_prob = 1 / (1 + np.exp(-log_odds))
+lo_neg = np.log(prior_odds) + np.log(lr_neg)             # one negative result instead
+p_neg = 1 / (1 + np.exp(-lo_neg))
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+ax1.plot(n_tests, post_prob, "o-", label="all results positive")
+ax1.plot(1, p_neg, "s", color="C3", label=f"one negative result: {p_neg:.5f}")
+for kk, p in zip(n_tests, post_prob):
+    ax1.annotate(f"{p:.3f}", (kk, p), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=8)
+ax1.axhline(0.5, color="gray", ls=":", lw=1)
+ax1.set_ylim(-0.03, 1.1); ax1.set_xticks(n_tests)
+ax1.set_xlabel("number of tests taken"); ax1.set_ylabel("P(disease | results)")
+ax1.set_title("Probability scale: a curve that saturates"); ax1.legend(fontsize=8, loc="center right")
+
+ax2.plot(n_tests, log_odds, "o-", label=f"all positive: each adds log {lr_pos:.1f} = {np.log(lr_pos):+.2f}")
+ax2.plot([0, 1], [log_odds[0], lo_neg], "s--", color="C3",
+         label=f"one negative result: log({1 - se:.2f}/{sp:.2f}) = {np.log(lr_neg):+.2f}")
+ax2.axhline(0, color="gray", ls=":", lw=1)
+ax2.annotate("log-odds 0 = probability 50%", (3.9, 0), textcoords="offset points", xytext=(0, -12),
+             ha="right", fontsize=8, color="gray")
+ax2.set_xticks(n_tests)
+ax2.set_xlabel("number of tests taken"); ax2.set_ylabel("log posterior odds")
+ax2.set_title("Log-odds scale: evidence just adds"); ax2.legend(fontsize=8, loc="upper left")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the same evidence looks completely different on the two scales. In probability the
+steps are $1\% \to 16.7\% \to 79.8\% \to 98.7\% \to 99.9\%$ — huge in the middle, tiny at the ends —
+while in log-odds every positive result is the identical step $+2.99$ and the points lie on a
+straight line. A single negative result is a step of $-4.55$, bigger than any positive one, because
+this test almost never misses a case. Adding log-likelihood ratios is exactly how the naive Bayes
+classifier of Section 9 combines words.
+
+Next, the PPV of a single positive test as a function of the prevalence, for four tests.
+""")
+
 nb.code(r"""
 prevs = np.logspace(-4, -0.0001, 400)
-for s, p_ in [(0.99, 0.95), (0.99, 0.99), (0.85, 0.93), (0.99, 0.999)]:
-    plt.plot(prevs * 100, ppv(s, p_, prevs), label=f"sensitivity {s}, specificity {p_}")
+for s, p_, ls in [(0.99, 0.95, "-"), (0.99, 0.99, "-"), (0.85, 0.95, "--"), (0.99, 0.999, "-")]:
+    plt.plot(prevs * 100, ppv(s, p_, prevs), ls, label=f"sensitivity {s}, specificity {p_}")
 plt.axhline(0.5, color="k", ls=":", lw=1)
 plt.axvline(1, color="gray", ls=":", lw=1)
 plt.xscale("log")
 plt.xlabel("prevalence in % (log scale)"); plt.ylabel("PPV = P(disease | positive test)")
 plt.title("A positive test means little when the condition is rare")
 plt.legend(fontsize=8); plt.show()
+print(f"PPV at 1% prevalence: se 0.99/sp 0.95 -> {ppv(0.99, 0.95, 0.01):.3f};  se 0.85/sp 0.95 -> {ppv(0.85, 0.95, 0.01):.3f};"
+      f"  se 0.99/sp 0.99 -> {ppv(0.99, 0.99, 0.01):.3f}")
 """)
 
 nb.md(r"""
 At 1% prevalence the 99%/95% test (blue) sits at a PPV of $1/6$; the curve for specificity 0.99
-is far higher at every prevalence, while raising *sensitivity* from 0.85 to 0.99 barely moves it. At
+is far higher at every prevalence, while lowering the *sensitivity* from 0.99 to 0.85 at the same
+specificity 0.95 (dashed) barely moves it: the PPV at 1% prevalence drops only from 0.167 to 0.147. At
 low prevalence the false positives come from the huge healthy population, so specificity is what
 counts. Each curve crosses $0.5$ at prevalence $(1 - \text{sp})/(\text{se} + 1 - \text{sp})$.
 
@@ -319,9 +423,11 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.5))
 ax1.bar(values - 0.2, pmf_exact, width=0.4, label="exact PMF")
 ax1.bar(values + 0.2, pmf_emp, width=0.4, label="20,000 samples")
 ax1.set_xlabel("s = sum of two dice"); ax1.set_ylabel("P(S = s)"); ax1.set_title("PMF of the dice sum"); ax1.legend()
-ax2.step(np.r_[1, values], np.r_[0, cdf_exact], where="post")
-ax2.axhline(0.5, color="gray", ls=":"); ax2.set_xlabel("s"); ax2.set_ylabel("F(s) = P(S <= s)")
-ax2.set_title("CDF of the dice sum (median = 7)")
+ax2.step(np.r_[1, values, 13], np.r_[0, cdf_exact, 1], where="post", label="F(s), exact")
+ax2.axhline(0.5, color="gray", ls=":")
+ax2.axvline(7, color="C3", ls="--", lw=1, label="median 7: first s with F(s) >= 0.5")
+ax2.set_xlim(1, 13); ax2.set_xlabel("s"); ax2.set_ylabel("F(s) = P(S <= s)")
+ax2.set_title("CDF of the dice sum (median = 7)"); ax2.legend(fontsize=8, loc="upper left")
 plt.tight_layout(); plt.show()
 
 print("s      :", " ".join(f"{s:5d}" for s in values))
@@ -359,7 +465,10 @@ print(f"density at y = 0.01: f_Y = {1/(2*np.sqrt(0.01)):.1f}  (> 1, allowed)   b
 print(f"P(0 < Y <= 0.01) = integral of f_Y = sqrt(0.01) = {np.sqrt(0.01):.3f}   simulation: {(y <= 0.01).mean():.4f}")
 print(f"median of Y: exact Q(0.5) = 0.5^2 = 0.25   simulation: {np.median(y):.4f}")
 print(f"90th percentile: exact 0.81   simulation: {np.quantile(y, 0.9):.4f}")
-print(f"check the density integrates to 1: {np.trapezoid(1/(2*np.sqrt(np.linspace(1e-9, 1, 2_000_001))), np.linspace(1e-9, 1, 2_000_001)):.4f}")
+# midpoint rule on a grid that is fine near y = 0, where the density is infinite (edges u^2, u equally spaced)
+edges = np.linspace(0, 1, 200_001) ** 2; mid = 0.5 * (edges[:-1] + edges[1:])
+print(f"check the density integrates to 1: {np.sum(np.diff(edges) / (2 * np.sqrt(mid))):.4f}   "
+      f"(midpoint rule; exact: sqrt(1) - sqrt(0) = 1)")
 """)
 
 nb.md(r"""
@@ -367,6 +476,52 @@ Squaring pushes mass towards 0: half of the $Y$ values are below $0.25$. The his
 `density=True` is the empirical density; its bars near $y = 0$ rise above 1 just as the formula says.
 Keep the three objects apart: the PDF $f_Y$ (a rate), the CDF $F_Y$ (a probability), and the quantile
 function $Q_Y = F_Y^{-1}$ (a value) — `np.quantile` computes the last one from samples.
+
+*Why* does the density blow up near 0? Cut the $x$-axis into ten strips of equal probability $0.1$ and
+follow each strip through $y = x^2$.
+""")
+
+nb.code(r"""
+cuts = np.linspace(0, 1, 11)                             # 10 strips of x, each with probability 0.1
+xx = np.linspace(0, 1, 400)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2))
+ax1.plot(xx, xx ** 2, "k", lw=1.5)
+ax1.text(0.72, 0.42, "y = x²", fontsize=11)
+for i, (a, b) in enumerate(zip(cuts[:-1], cuts[1:])):
+    col = "C1" if i % 2 else "C0"
+    ax1.fill_between([a, b], -0.07, -0.02, color=col)                # the strip, drawn below the x-axis
+    ax1.fill_betweenx([a ** 2, b ** 2], -0.07, -0.02, color=col)     # its image, drawn left of the y-axis
+    ax1.plot([b, b, 0], [0, b ** 2, b ** 2], ":", color="gray", lw=0.8)
+ax1.axhline(0, color="k", lw=0.8); ax1.axvline(0, color="k", lw=0.8)
+ax1.annotate("first strip -> [0, 0.01]", xy=(-0.02, 0.005), xytext=(0.1, 0.25),
+             arrowprops=dict(arrowstyle="->"), fontsize=9)
+ax1.annotate("last strip -> [0.81, 1]", xy=(-0.02, 0.9), xytext=(0.1, 0.72),
+             arrowprops=dict(arrowstyle="->"), fontsize=9)
+ax1.set_xlim(-0.08, 1); ax1.set_ylim(-0.08, 1)
+ax1.set_xlabel("x  (10 strips, probability 0.1 each)"); ax1.set_ylabel("y = x²  (images of the strips)")
+ax1.set_title("Equal-probability strips mapped through y = x²")
+
+widths = np.diff(cuts ** 2)                              # lengths of the image strips: 0.01, 0.03, ..., 0.19
+ax2.bar(cuts[:-1] ** 2, 0.1 / widths, width=widths, align="edge", alpha=0.5, edgecolor="k",
+        label="0.1 / (length of the image strip)")
+yy = np.linspace(0.002, 1, 400)
+ax2.plot(yy, 1 / (2 * np.sqrt(yy)), "r", label=r"$f_Y(y) = 1/(2\sqrt{y})$")
+ax2.annotate("0.1 / 0.01 = 10", xy=(0.01, 10), xytext=(0.12, 9), arrowprops=dict(arrowstyle="->"), fontsize=9)
+ax2.annotate("0.1 / 0.19 = 0.53", xy=(0.9, 0.53), xytext=(0.62, 2.6), arrowprops=dict(arrowstyle="->"), fontsize=9)
+ax2.set_ylim(0, 11); ax2.set_xlim(0, 1)
+ax2.set_xlabel("y"); ax2.set_ylabel("probability per unit length")
+ax2.set_title("Bar height = probability / length = density"); ax2.legend(loc="upper right", fontsize=9)
+plt.tight_layout(); plt.show()
+print("image-strip lengths:", np.round(widths, 2), "  bar heights:", np.round(0.1 / widths, 2))
+""")
+
+nb.md(r"""
+**Notice that** the equally spaced cuts on the $x$-axis arrive on the $y$-axis bunched up near 0: the
+first tenth of the probability is squeezed into $[0, 0.01]$, the last tenth spread over $[0.81, 1]$, an
+interval 19 times longer. A density is probability per unit length, so the same $0.1$ gives a bar of
+height $0.1/0.01 = 10$ on the left and $0.1/0.19 \approx 0.53$ on the right. Each bar is the average of
+$f_Y$ over its strip, which is why the bars follow the red curve; the factor $|(g^{-1})'(y)| = \frac{1}{2\sqrt{y}}$
+in the change-of-variables formula is exactly this squeezing.
 
 **Try it yourself:** replace `y = x ** 2` by `y = -np.log(x)` and plot the histogram against
 $f_Y(y) = e^{-y}$ — this is how an exponential random variable is sampled from a uniform one.
@@ -452,34 +607,108 @@ for name, Y in pairs.items():
 Z = (X - E_X) / np.sqrt(var_X)
 print(f"\nz-scores of the die: mean {Z.mean():.4f}, var {Z.var():.4f};  a six has z = {(6 - E_X)/np.sqrt(var_X):.3f}")
 
-# averages: Var(mean of n) = sigma^2 / n
+# averages: Var(mean of n) = sigma^2 / n   (the samples are kept for the histogram further down)
+avg_of = {}
 for m in (1, 4, 16, 64):
-    means = rng.integers(1, 7, size=(50_000, m)).mean(axis=1)
-    print(f"average of {m:2d} dice: sd = {means.std():.4f}   sigma/sqrt(n) = {np.sqrt(var_X/m):.4f}")
-""")
-
-nb.code(r"""
-# Chebyshev vs truth for a skewed variable: Y = X^2 with X ~ Uniform(0,1)  (mean 1/3, var 4/45)
-mu_y, sd_y = 1/3, np.sqrt(4/45)
-ks = np.linspace(1, 4, 50)
-truth = np.array([np.mean(np.abs(y - mu_y) >= k * sd_y) for k in ks])
-plt.plot(ks, 1 / ks**2, "k--", label="Chebyshev bound 1/k²")
-plt.plot(ks, truth, label="true P(|Y - mu| >= k sigma), Y = X²")
-plt.plot(ks, [np.mean(np.abs(rng.integers(1, 7, 100_000) - 3.5) >= k * np.sqrt(35/12)) for k in ks], label="true value for one die")
-plt.xlabel("k (number of standard deviations)"); plt.ylabel("probability")
-plt.title("Chebyshev's inequality is valid for every distribution — and loose")
-plt.legend(); plt.show()
-for k in (1.5, 2, 3):
-    print(f"k = {k}: bound {1/k**2:.3f}   Y = X^2: {np.mean(np.abs(y - mu_y) >= k*sd_y):.4f}   die: {np.mean(np.abs(X - 3.5) >= k*np.sqrt(35/12)):.4f}")
+    avg_of[m] = rng.integers(1, 7, size=(50_000, m)).mean(axis=1)
+    print(f"average of {m:2d} dice: sd = {avg_of[m].std():.4f}   sigma/sqrt(n) = {np.sqrt(var_X/m):.4f}")
 """)
 
 nb.md(r"""
 In the variance table the first row (independent dice) has a covariance near 0 and the variances add;
 the second row has $\operatorname{Cov} = -\operatorname{Var}X$ and $X + Y = 7$ has *zero* variance; the
-third has $\operatorname{Var}(2X) = 4\operatorname{Var}X$, twice what naive addition would give. The
-standard deviation of an average of $n$ dice falls like $1/\sqrt{n}$, exactly $\sigma/\sqrt{n}$.
+third has $\operatorname{Var}(2X) = 4\operatorname{Var}X$, twice what naive addition would give. The next
+figure shows where these numbers come from: the joint distribution of each pair (top) and the
+distribution of $X + Y$ it produces (bottom).
+""")
+
+nb.code(r"""
+fig, axes = plt.subplots(2, 3, figsize=(10, 6.4))
+cells = np.arange(1, 7)
+s_vals = np.arange(2, 13)
+dots = {"independent second die": "36 dots of 1/36", "Y = 7 - X (dependent)": "6 dots of 1/6",
+        "Y = X (dependent)": "6 dots of 1/6"}
+for j, (name, Y) in enumerate(pairs.items()):
+    joint = np.array([[np.mean((X == a) & (Y == b)) for b in cells] for a in cells])   # joint[a-1, b-1]
+    A, B = np.meshgrid(cells, cells, indexing="ij")
+    ax = axes[0, j]
+    ax.scatter(A.ravel(), B.ravel(), s=2400 * joint.ravel(), color="C0", alpha=0.8)
+    ax.set_xlim(0.4, 6.6); ax.set_ylim(0.4, 6.6); ax.set_aspect("equal")
+    ax.set_xticks(cells); ax.set_yticks(cells)
+    ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_title(f"{name}: {dots[name]}", fontsize=9)
+    S = X + Y
+    pmf_s = np.array([np.mean(S == s) for s in s_vals])
+    ax = axes[1, j]
+    ax.bar(s_vals, pmf_s, color="C0", alpha=0.8)
+    ax.axvline(S.mean(), color="C3", ls="--", label=f"mean {S.mean():.2f}, sd {S.std():.2f}")
+    ax.set_ylim(0, 1.15); ax.set_xticks(range(2, 13, 2))
+    ax.set_xlabel("X + Y"); ax.set_ylabel("P(X + Y = s)"); ax.legend(fontsize=8, loc="upper left")
+fig.suptitle("Joint distribution of (X, Y), dot area = probability (top), and the distribution of X + Y (bottom)",
+             fontsize=11)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the three joint distributions look nothing alike — 36 small dots of $1/36$ each, six
+large dots on the anti-diagonal, six on the diagonal — yet every lower panel has its mean at 7: that is
+linearity of expectation. What the dependence changes is the *spread* of $X + Y$: a triangle from 2 to
+12 (sd $\sqrt{35/6} \approx 2.4$) when the variances simply add, a single spike at 7 (sd $0$) when the
+negative covariance cancels them, and six bars on the even numbers 2 to 12 (sd $3.42 = 2 \times 1.71$) when the positive
+covariance doubles the sum.
+
+The last block of the variance cell averaged $n$ dice; here are those averages as histograms.
+""")
+
+nb.code(r"""
+plt.figure(figsize=(8, 4.2))
+for m in (1, 4, 16, 64):
+    bins = np.arange(1 - 1 / (2 * m), 6 + 1 / m, 1 / m)   # one bin per possible value k/m of the average
+    plt.hist(avg_of[m], bins=bins, density=True, histtype="step", lw=1.5,
+             label=f"n = {m:2d}: sd {avg_of[m].std():.3f}  (σ/√n = {np.sqrt(var_X / m):.3f})")
+plt.axvline(3.5, color="k", ls="--", lw=1, label="E[X] = 3.5")
+plt.xlim(0.3, 6.7)
+plt.xlabel("average of n dice"); plt.ylabel("density")
+plt.title("The average of n dice concentrates around 3.5 at rate 1/sqrt(n)")
+plt.legend(title="average of n dice", fontsize=8, title_fontsize=8, loc="center right"); plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** every fourfold increase in the number of dice halves the width of the distribution of
+the average — the standard deviation falls exactly like $\sigma/\sqrt{n}$ — and that its shape changes
+on the way: flat for one die, a bell for 16 or 64. The narrowing is Chebyshev-type concentration, which
+we test next; the bell shape is the central limit theorem of Module 8.
+""")
+
+nb.code(r"""
+# Chebyshev vs truth for a skewed variable: Y = X^2 with X ~ Uniform(0,1)  (mean 1/3, var 4/45)
+mu_y, sd_y = 1/3, np.sqrt(4/45)
+
+def tail_y_exact(t):
+    # P(|Y - mu| >= t) = P(Y >= mu + t) + P(Y <= mu - t), with F_Y(y) = sqrt(y) on [0, 1]
+    return (1 - np.sqrt(np.clip(mu_y + t, 0, 1))) + np.sqrt(np.clip(mu_y - t, 0, 1))
+
+def tail_die_exact(k):
+    # P(|X - 3.5| >= k sigma) for one fair die: count the faces far enough from 3.5
+    return np.mean(np.abs(faces - 3.5) >= k * np.sqrt(35/12))
+
+ks = np.linspace(1, 4, 301)
+ks_dots = ks[::25]
+plt.plot(ks, 1 / ks**2, "k--", label="Chebyshev bound 1/k²")
+plt.plot(ks, tail_y_exact(ks * sd_y), color="C0", label="exact P(|Y - mu| >= k sigma), Y = X²")
+plt.plot(ks_dots, [np.mean(np.abs(y - mu_y) >= k * sd_y) for k in ks_dots], "o", color="C0", ms=4,
+         label="same, estimated from the 100,000 samples of Y")
+plt.plot(ks, [tail_die_exact(k) for k in ks], color="C1", label="exact value for one die")
+plt.xlabel("k (number of standard deviations)"); plt.ylabel("probability")
+plt.title("Chebyshev's inequality is valid for every distribution — and loose")
+plt.legend(fontsize=9); plt.show()
+for k in (1.5, 2, 3):
+    print(f"k = {k}: bound {1/k**2:.3f}   Y = X^2: exact {tail_y_exact(k * sd_y):.4f}, "
+          f"simulated {np.mean(np.abs(y - mu_y) >= k*sd_y):.4f}   die: exact {tail_die_exact(k):.4f}")
+""")
+
+nb.md(r"""
 The Chebyshev plot shows the bound sitting well above both true curves — it is a guarantee, not an
-estimate — and at $k = 3$ it still allows $11\%$ in the tails where the die has $0\%$.
+estimate — and at $k = 3$ it still allows $11\%$ in the tails where both the die and $Y = X^2$ have $0\%$.
 
 **Try it yourself:** in the Chebyshev cell, generate a heavy-tailed sample such as
 `rng.standard_t(df=3, size=100_000)` and compare its tail probabilities with the bound.
@@ -502,11 +731,15 @@ def estimate_pi(n, rng):
     return 4 * inside.mean()
 
 pts = rng.random((3000, 2)); inside = (pts ** 2).sum(axis=1) <= 1
-plt.figure(figsize=(4, 4))
-plt.scatter(pts[inside, 0], pts[inside, 1], s=3, label="inside")
-plt.scatter(pts[~inside, 0], pts[~inside, 1], s=3, label="outside")
-plt.gca().set_aspect("equal"); plt.xlabel("x"); plt.ylabel("y")
-plt.title(f"3000 points: pi estimate = {4*inside.mean():.3f}"); plt.legend(loc="lower left", fontsize=8); plt.show()
+t = np.linspace(0, np.pi / 2, 200)
+plt.figure(figsize=(6.4, 4))
+plt.scatter(pts[inside, 0], pts[inside, 1], s=3, label=f"inside the quarter circle: {inside.sum()}")
+plt.scatter(pts[~inside, 0], pts[~inside, 1], s=3, label=f"outside: {(~inside).sum()}")
+plt.plot(np.cos(t), np.sin(t), "k-", lw=1.2, label="boundary x² + y² = 1")
+plt.xlim(0, 1); plt.ylim(0, 1); plt.gca().set_aspect("equal"); plt.xlabel("x"); plt.ylabel("y")
+plt.title(f"3000 points: pi ≈ 4 × {inside.sum()}/3000 = {4*inside.mean():.3f}")
+plt.legend(loc="upper left", bbox_to_anchor=(1.02, 1), fontsize=8, markerscale=3)
+plt.tight_layout(); plt.show()
 
 ns = np.array([10, 30, 100, 300, 1_000, 3_000, 10_000, 30_000])
 reps = 200
@@ -529,7 +762,25 @@ nb.md(r"""
 On log–log axes the error is a straight line of slope $-1/2$: every factor of 100 in $n$ buys one
 decimal digit. This is the same $\sigma/\sqrt{n}$ you saw for averages of dice, and it is the reason
 Monte Carlo is cheap for two digits and ruinously expensive for six. The birthday problem works the
-same way — the exercises ask you to simulate it and compare with the exact product formula.
+same way: we simulate 10,000 groups of 23 people and compare the share of groups with a shared birthday
+with the exact product formula $1 - \prod_{i=0}^{22} \frac{365 - i}{365}$ of the guide.
+""")
+
+nb.code(r"""
+n_people, n_groups = 23, 10_000
+p_shared_exact = 1 - np.prod((365 - np.arange(n_people)) / 365)      # 1 - P(all birthdays different)
+bdays = np.sort(rng.integers(0, 365, size=(n_groups, n_people)), axis=1)
+shared = (np.diff(bdays, axis=1) == 0).any(axis=1)                   # equal neighbours after sorting
+se_bday = np.sqrt(p_shared_exact * (1 - p_shared_exact) / n_groups)
+print(f"exact P(at least one shared birthday among {n_people}) = {p_shared_exact:.4f}")
+print(f"simulated with {n_groups:,} groups                      = {shared.mean():.4f}   "
+      f"(standard error {se_bday:.4f}, so typically within {p_shared_exact - 2*se_bday:.3f}-{p_shared_exact + 2*se_bday:.3f})")
+""")
+
+nb.md(r"""
+The simulated value lands inside the two-standard-error window around $0.507$, just as the $1/\sqrt{n}$
+law predicts. Exercise 5 turns this into reusable functions, uses twice as many groups and asks for the
+smallest group in which a shared birthday is 99% certain.
 """)
 
 # ---------------------------------------------------------------- 9. naive Bayes
@@ -592,6 +843,47 @@ def classify(message, alpha=1.0, verbose=False):
 
 for msg in ["free money offer", "meeting about the project report", "click to win a prize", "free lunch at the meeting"]:
     classify(msg, verbose=True)
+""")
+
+nb.md(r"""
+The printout is easier to read as a running total. Start from the prior log-odds
+$\log\frac{P(\text{spam})}{P(\text{ham})}$ and add each word's log-likelihood ratio in turn; the sign at
+the end is the decision.
+""")
+
+nb.code(r"""
+from matplotlib.lines import Line2D
+
+trace_msgs = ["free money offer", "meeting about the project report", "click to win a prize", "free lunch at the meeting"]
+fig, axes = plt.subplots(2, 2, figsize=(10, 6.4), sharey=True)
+for ax, msg in zip(axes.ravel(), trace_msgs):
+    words = [w for w in msg.split() if w in vocab]
+    step = np.array([log_word_prob(w, "spam") - log_word_prob(w, "ham") for w in words])
+    start = log_prior["spam"] - log_prior["ham"]                     # 0 here: 6 spam and 6 ham messages
+    running = start + np.cumsum(step)
+    pos = np.arange(1, len(words) + 1)
+    ax.bar(pos, step, color=["C3" if v > 0 else "C0" for v in step], alpha=0.6)
+    ax.plot(np.r_[0, pos], np.r_[start, running], "ko-", ms=4)
+    ax.axhline(0, color="gray", ls=":")
+    ax.set_xticks(np.r_[0, pos]); ax.set_xticklabels(["prior"] + words, fontsize=8)
+    ax.set_xlabel("words of the message, in order"); ax.set_ylabel("log-odds, spam vs ham")
+    ax.set_title(f"'{msg}'  ->  P(spam) = {classify(msg)[1]:.3f}", fontsize=10)
+handles = [Patch(color="C3", alpha=0.6, label="word's log-likelihood ratio > 0 (pushes to spam)"),
+           Patch(color="C0", alpha=0.6, label="word's log-likelihood ratio < 0 (pushes to ham)"),
+           Line2D([], [], color="k", marker="o", ms=4, label="running log-odds")]
+fig.legend(handles=handles, loc="lower center", ncol=3, fontsize=8)
+fig.suptitle("Naive Bayes reads a message word by word; the sign of the final log-odds decides")
+plt.tight_layout(rect=(0, 0.05, 1, 1)); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the prior contributes nothing here (six spam and six ham training messages, so
+$\log 1 = 0$), and that each word simply moves the running total up (red) or down (blue). "free money
+offer" climbs with every word; "free lunch at the meeting" starts with a step towards spam, but the
+four ham-leaning words that follow ("lunch", "at", "the", "meeting") pull it well below zero, so the one
+spam word is outvoted. The same additive bookkeeping was at work in the sequential diagnostic tests of
+Section 4 — each test result there, each word here, adds its log-likelihood ratio. Words never seen in
+training, such as "about", are skipped, exactly as in `classify`, so they get no bar.
 """)
 
 nb.code(r"""
@@ -660,7 +952,7 @@ nb.md(r"""
 - Bayes' theorem inverts conditionals; at low prevalence the PPV is driven by specificity, and sequential evidence multiplies likelihood ratios in odds form.
 - PMFs sum to 1, PDFs integrate to 1 and may exceed 1, CDFs give probabilities of intervals, quantile functions invert them; $f_Y = f_X(g^{-1})\,|(g^{-1})'|$ for monotone transformations.
 - Expectation is linear for *all* random variables; $\mathbb{E}[g(X)] \ne g(\mathbb{E}[X])$ and $\mathbb{E}[XY] \ne \mathbb{E}[X]\mathbb{E}[Y]$ in general.
-- Variances add only up to a covariance term; standardisation gives $z$-scores; Chebyshev bounds tails for every distribution with finite variance.
+- Variances add only up to a covariance term; standardisation gives $z$-scores; Chebyshev bounds tails for every distribution with finite, non-zero variance.
 - Naive Bayes is Bayes' theorem plus conditional independence plus Laplace smoothing, computed in log space — and it matches `MultinomialNB` exactly.
 
 **Next:** open `exercises.ipynb` and work through the self-checked problems; the solutions notebook has reference implementations.
@@ -671,6 +963,10 @@ print(f"lesson.ipynb: {len(nb.cells)} cells")
 
 # =============================================================================
 # EXERCISES — hidden answers are computed by executing the reference solutions
+# The section comments give the exercise numbers as they appear in the notebooks; the SOL_n / nsn
+# names do not always match them: SOL_1, SOL_2 are Exercises 1, 2; SOL_3 ... SOL_8 are Exercises 4 ... 9
+# (one behind, because of the conceptual Exercise 3); the naive Bayes exercise is SOL_10 / ns10 = Exercise 10
+# (there is no SOL_9); and Exercise 11 is PROJECT_CODE.
 # =============================================================================
 SETUP = r"""
 import numpy as np
@@ -701,7 +997,7 @@ Several checks compare your answer against a *hidden* value, so compute carefull
     setup_code=SETUP,
 )
 
-# ---------------------------------------------------------------- 1. compound events (warm-up)
+# ---------------------------------------------------------------- Exercise 1. compound events (warm-up)
 SOL_1 = r"""
 from itertools import product
 omega = [(i, j) for i, j in product(range(1, 7), repeat=2)]
@@ -763,7 +1059,7 @@ bound, an overestimate).
 """,
 )
 
-# ---------------------------------------------------------------- 2. total probability (warm-up)
+# ---------------------------------------------------------------- Exercise 2. total probability (warm-up)
 SOL_2 = r"""
 def p_defective(shares, defect_rates):
     shares = np.asarray(shares, dtype=float); defect_rates = np.asarray(defect_rates, dtype=float)
@@ -829,7 +1125,7 @@ pattern `joint / joint.sum()` is Bayes' theorem for any finite set of hypotheses
 """,
 )
 
-# ---------------------------------------------------------------- 3. PPV (core)
+# ---------------------------------------------------------------- Exercise 4. PPV (core)
 SOL_3 = r"""
 def ppv(sensitivity, specificity, prevalence):
     tp = sensitivity * prevalence
@@ -915,14 +1211,14 @@ PPV is Bayes' theorem with the evidence expanded by total probability. Setting i
 solving gives $\pi = \frac{t(1 - \text{sp})}{\text{se}(1 - t) + t(1 - \text{sp})}$, which reduces to
 $\frac{1 - \text{sp}}{\text{se} + 1 - \text{sp}}$ at $t = 0.5$. For the second test the odds form is
 cleanest: prior odds $0.002/0.998$, likelihood ratio $0.90/0.03 = 30$, so two positives multiply the odds
-by 900 and take the posterior from about 5.7% to about 64%. The usual mistake is to feed the first
-posterior back into `ppv` as the new prevalence — which is correct and gives the same number — but to then
-*also* forget that this assumes the two test results are conditionally independent given the disease
-status.
+by 900 and take the posterior from about 5.7% to about 64%. Feeding the first posterior (5.7%) back into
+`ppv` as the new prevalence is a valid alternative and gives the same 64%; the real pitfall is forgetting
+that both routes assume the two results are conditionally independent given the disease status — two
+runs of the same test on the same sample usually are not.
 """,
 )
 
-# ---------------------------------------------------------------- 4. birthday problem (core)
+# ---------------------------------------------------------------- Exercise 5. birthday problem (core)
 SOL_4 = r"""
 def birthday_exact(n, days=365):
     p_all_different = 1.0
@@ -1019,7 +1315,7 @@ $\binom{n}{2}$, is what makes the answer so much smaller than intuition suggests
 """,
 )
 
-# ---------------------------------------------------------------- 5. PMF / expectation / variance (core)
+# ---------------------------------------------------------------- Exercise 6. PMF / expectation / variance (core)
 SOL_5 = r"""
 def check_pmf(values, probs):
     probs = np.asarray(probs, dtype=float)
@@ -1081,7 +1377,8 @@ def cdf(values, probs, x):
 vals = [-2, 0, 1, 3, 10]
 pr = [0.1, 0.3, 0.3, 0.2, 0.1]
 try:
-    ok1 = check_pmf(vals, pr) is True and check_pmf(vals, [0.5, 0.5, 0.5, 0.5, 0.5]) is False and check_pmf([1, 2], [1.5, -0.5]) is False
+    # == rather than `is`, so that a NumPy bool (np.True_) counts as True
+    ok1 = check_pmf(vals, pr) == True and check_pmf(vals, [0.5, 0.5, 0.5, 0.5, 0.5]) == False and check_pmf([1, 2], [1.5, -0.5]) == False
 except Exception:
     ok1 = False
 check('check_pmf accepts a valid PMF and rejects two invalid ones', ok1)
@@ -1133,7 +1430,7 @@ with a Python list, which raises a `TypeError`; convert to an array first.
 """,
 )
 
-# ---------------------------------------------------------------- conceptual (warm-up, placed third)
+# ---------------------------------------------------------------- Exercise 3. conceptual (warm-up, moved to third place below)
 ex.add_conceptual(
     title="Independent or mutually exclusive?", difficulty=1,
     prompt_md=r"""
@@ -1164,7 +1461,7 @@ multiply their probabilities to get the chance that a transaction triggers both.
 )
 ex.items.insert(2, ex.items.pop())          # make it Exercise 3, right after total probability
 
-# ---------------------------------------------------------------- 6. inverse-CDF sampler (core)
+# ---------------------------------------------------------------- Exercise 7. inverse-CDF sampler (core)
 SOL_6 = r"""
 def quantile_discrete(values, probs, u):
     values = np.asarray(values, dtype=float); F = np.cumsum(np.asarray(probs, dtype=float))
@@ -1246,7 +1543,7 @@ distributions in Module 18. A common slip is to return the *index* `k` instead o
 """,
 )
 
-# ---------------------------------------------------------------- 7. change of variables (core)
+# ---------------------------------------------------------------- Exercise 8. change of variables (core)
 SOL_7 = r"""
 def pdf_y(y):
     y = np.asarray(y, dtype=float)
@@ -1351,7 +1648,7 @@ $f_Y(y) = f_X(y^{1/3})$ and forget the Jacobian, which gives a "density" of $\tf
 """,
 )
 
-# ---------------------------------------------------------------- 8. Monte Carlo (core)
+# ---------------------------------------------------------------- Exercise 9. Monte Carlo (core)
 SOL_8 = r"""
 def mc_estimate(sample_fn, n, rng):
     x = np.asarray(sample_fn(n, rng), dtype=float)
@@ -1444,7 +1741,7 @@ standard deviation by $n$ instead of $\sqrt{n}$, or to report the standard devia
 """,
 )
 
-# ---------------------------------------------------------------- 10. naive Bayes (stretch)
+# ---------------------------------------------------------------- Exercise 10. naive Bayes (stretch)
 SOL_10 = r"""
 from collections import Counter
 
@@ -1614,7 +1911,7 @@ denominators inconsistent and silently biases the comparison.
 """,
 )
 
-# ---------------------------------------------------------------- 11. mini-project (★★★)
+# ---------------------------------------------------------------- Exercise 11. mini-project (★★★)
 PROJECT_CODE = r"""
 rng = np.random.default_rng(2024)
 
@@ -1639,7 +1936,9 @@ deadline = 45
 p_on_time = (total <= deadline).mean()
 se = np.sqrt(p_on_time * (1 - p_on_time) / n_sims)
 q90 = np.quantile(total, 0.90)
-naive_sum = 11 + 10 + (15 + 20 + 30) / 3 + 5 * (1 / 0.75)   # sum of all task means: treats parallel tasks as sequential
+# sum of all four task means (design, procurement, build, testing), which treats the parallel tasks as
+# sequential; the log-normal's mean is its median times exp(sigma^2 / 2) = 10.46, not the median 10
+naive_sum = 11 + 10 * np.exp(0.3**2 / 2) + (15 + 20 + 30) / 3 + 5 * (1 / 0.75)
 e_max = np.maximum(parts["design"], parts["procurement"]).mean()
 print(f"mean duration        : {total.mean():6.2f} days")
 print(f"naive sum of all task means: {naive_sum:.2f} days (too pessimistic: design and procurement run in parallel)")
@@ -1684,16 +1983,19 @@ questions a project manager actually asks: *what is the probability of finishing
    ends when **both** are finished (take the maximum).
 2. **Phase B** — *build*, Triangular(15, 20, 30) days. **Dependency:** if procurement took more than 12 days the
    parts arrive in a rush and build takes 20% longer.
-3. **Phase C** — *testing*, Uniform(4, 6) days per test cycle; the number of cycles is Geometric with success
-   probability 0.75 (`rng.geometric(0.75)`, so one cycle with probability 0.75, two with 0.1875, ...).
+3. **Phase C** — *testing*: one test cycle takes Uniform(4, 6) days (draw one cycle duration per project; a
+   repeated cycle takes the same time again), and the number of cycles is Geometric with success
+   probability 0.75 (`rng.geometric(0.75)`, so one cycle with probability 0.75, two with 0.1875, ...); the
+   testing time is the cycle duration times the number of cycles.
 
 **Deliverables**
 
 * `P(total <= 45)` with its Monte Carlo standard error, and the 90% (and 99%) quantile of the total duration;
 * a histogram of the total duration with the deadline and the 90% quantile marked;
-* a comparison of the Monte Carlo mean with the naive "sum of the expected task durations of all five
-  tasks" (which treats the parallel Phase-A tasks as sequential and ignores the dependency and the random
-  number of cycles) — explain the direction of the difference and which effects push which way;
+* a comparison of the Monte Carlo mean with the naive "sum of the expected task durations of all four
+  tasks" (which treats the parallel Phase-A tasks as sequential and ignores the dependency; use the expected
+  testing time $5 \times 1/0.75 \approx 6.67$ days, which is exact because cycle duration and number of cycles are
+  independent) — explain the direction of the difference and which effects push which way;
 * a sensitivity analysis: which task differs most between on-time and late projects, and
   $P(\text{late} \mid \text{procurement} > 12)$ versus $P(\text{late} \mid \text{procurement} \le 12)$;
 * the estimate of `P(total <= 45)` for $n = 100, 1{,}000, 10{,}000, 100{,}000$ with standard errors, to show the
@@ -1714,9 +2016,10 @@ questions a project manager actually asks: *what is the probability of finishing
     solution_sketch_md=r"""
 Sample every task for all runs at once (arrays of length 100,000), combine them with `np.maximum`, `np.where`
 for the dependency, and multiplication for the test cycles, and sum. The simulated mean is about 41.7 days.
-The naive "sum of the means of all tasks" ($11 + 10 + 21.67 + 6.67 \approx 49.3$) is *too pessimistic* here,
+The naive "sum of the means of all tasks" ($11 + 10.46 + 21.67 + 6.67 \approx 49.8$; the log-normal's mean is
+its median times $e^{0.3^2/2}$, so $\mathbb{E}P \approx 10.46$, not 10) is *too pessimistic* here,
 because design and procurement run in **parallel**: the correct Phase-A contribution is
-$\mathbb{E}[\max(D, P)] \approx 12.2$, not $\mathbb{E}D + \mathbb{E}P = 21$. Two effects push the other way and
+$\mathbb{E}[\max(D, P)] \approx 12.2$, not $\mathbb{E}D + \mathbb{E}P \approx 21.5$. Two effects push the other way and
 are easy to forget: $\mathbb{E}[\max(D, P)] \ge \max(\mathbb{E}D, \mathbb{E}P) = 11$ (the maximum of random
 variables is on average later than the later of the two means), and the late-procurement penalty only ever
 *adds* time. $P(\text{on time})$ comes out near 0.74 with a standard error of about 0.0014; the 90% quantile
