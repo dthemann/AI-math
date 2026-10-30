@@ -5,7 +5,7 @@ build_12.py — generates lesson.ipynb, exercises.ipynb and solutions.ipynb for
 
 Run from the repository root:
 
-    python3 _authoring/builders/build_12.py
+    python3 tools/builders/build_12.py
     python3 tools/run_notebooks.py part-4-statistics/12-hypothesis-testing-and-experiments
 
 All hidden answers are computed here by *executing* the reference solutions and hashing
@@ -53,13 +53,14 @@ thing, implement Bonferroni, Holm and Benjamini–Hochberg and measure what they
 randomisation and blocking buy in an experiment, quantify how peeking inflates false positives, and
 finally compare two classifiers properly with McNemar's test and a corrected cross-validation test.
 
-Everything is plain NumPy first; `scipy.stats` and scikit-learn appear afterwards to confirm the hand
-computation.
+The key formulas are coded by hand first and `scipy.stats` confirms them; scikit-learn supplies the two
+classifiers in Section 10.
 """)
 
 nb.code(r"""
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 from math import comb
 from scipy import stats
 rng = np.random.default_rng(42)
@@ -103,12 +104,17 @@ for c in range(8, 13):
     flag = "  <- first region with size <= 0.05" if size <= 0.05 and pmf0[np.abs(ks - mu) >= c - 1].sum() > 0.05 else ""
     print(f"reject if |X - 50| >= {c:2d}:  size = {size:.4f}{flag}")
 
-colors = np.where(np.abs(ks - mu) >= k_obs - mu, "C3", "C0")
+dist = np.abs(ks - mu)
+colors = np.where(dist >= 11, "C3", np.where(dist == 10, "C1", "C0"))
 plt.bar(ks, pmf0, color=colors, width=0.9)
-plt.axvline(k_obs, color="k", ls="--", label="observed X = 60")
-plt.xlim(25, 75); plt.xlabel("number of heads X"); plt.ylabel("P(X = k) under H0: fair coin")
-plt.title("Null distribution; red bars = outcomes at least as extreme as 60 (p = 0.057)")
-plt.legend(); plt.show()
+obs_line = plt.axvline(k_obs, color="k", ls="--", label="observed X = 60")
+plt.xlim(25, 75); plt.ylim(0, 0.105); plt.xlabel("number of heads X"); plt.ylabel("P(X = k) under H0: fair coin")
+plt.title("Null distribution of X: p = red + orange, level-0.05 region = red only")
+plt.legend(handles=[obs_line,
+                    Patch(color="C3", label=f"|X - 50| >= 11: total {pmf0[dist >= 11].sum():.3f}, the level-0.05 region"),
+                    Patch(color="C1", label=f"X = 40 or 60: adding them gives p = {p_exact:.3f}")],
+           fontsize=8, loc="upper left")
+plt.show()
 """)
 
 nb.md(r"""
@@ -116,7 +122,8 @@ Notice three things. The exact two-sided p-value is $0.057$: a fair coin produce
 lopsided about once in 18 blocks of 100 flips, so at $\alpha = 0.05$ we do **not** reject. The crude normal
 approximation says $0.046$ and *would* reject — approximations matter exactly at the boundary, and the
 continuity correction repairs most of the damage. And because $X$ is discrete, no region has size exactly
-$0.05$: the level-0.05 test is "reject if $X \le 39$ or $X \ge 61$", whose true size is only $0.035$.
+$0.05$: the level-0.05 test is "reject if $X \le 39$ or $X \ge 61$" (the red bars), whose true size is only
+$0.035$, and adding the orange bars at 40 and 60 overshoots to $0.057$.
 
 ### p-values are uniform under the null
 
@@ -135,10 +142,14 @@ p_null = stats.ttest_ind(x, y_null, axis=1, equal_var=False).pvalue
 p_alt = stats.ttest_ind(x, y_alt, axis=1, equal_var=False).pvalue
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.5), sharey=True)
-ax1.hist(p_null, bins=20, range=(0, 1), density=True, alpha=0.8); ax1.axhline(1, color="k", ls="--")
-ax1.set_title("H0 true: p-values are Uniform(0, 1)"); ax1.set_xlabel("p-value"); ax1.set_ylabel("density")
-ax2.hist(p_alt, bins=20, range=(0, 1), density=True, alpha=0.8, color="C3")
-ax2.set_title("H1 true (shift 0.5 sd): p-values pile up near 0"); ax2.set_xlabel("p-value")
+for ax, pv, col, ttl in ((ax1, p_null, "C0", "H0 true: p-values are Uniform(0, 1)"),
+                         (ax2, p_alt, "C3", "H1 true (shift 0.5 sd): p-values pile up near 0")):
+    _, _, patches = ax.hist(pv, bins=20, range=(0, 1), density=True, alpha=0.45, color=col)
+    patches[0].set_alpha(1.0)                                  # the first bin is exactly [0, 0.05)
+    ax.text(0.28, 3.2, f"dark bar: mass below 0.05 = {(pv < 0.05).mean():.3f}")
+    ax.set_title(ttl); ax.set_xlabel("p-value")
+ax1.axhline(1, color="k", ls="--", label="Uniform(0, 1) density"); ax1.set_ylabel("density")
+ax1.legend(loc="upper right", fontsize=8)
 plt.tight_layout(); plt.show()
 
 for a in (0.01, 0.05, 0.10):
@@ -146,8 +157,8 @@ for a in (0.01, 0.05, 0.10):
 """)
 
 nb.md(r"""
-Under $H_0$ the histogram is flat and the fraction of p-values below $0.05$ is $0.05$ — the false-alarm rate is
-built into the procedure, whatever the data look like. Under $H_1$ the fraction below $0.05$ is the power,
+Under $H_0$ the histogram is flat and the fraction of p-values below $0.05$ is about $0.05$ ($0.048$ here) — the
+false-alarm rate is built into the procedure, whatever the data look like. Under $H_1$ the fraction below $0.05$ is the power,
 here only about $0.34$: with 20 observations per group a half-standard-deviation effect is missed two times
 in three. That number is the subject of the next section.
 
@@ -199,17 +210,51 @@ for d, c in zip((2.0, 4.0, 6.0), ("C0", "C1", "C2")):
     plt.plot(ns, power_two_sample_z(d, sigma, ns), color=c, label=f"delta = {d:.0f} (analytic)")
 sim_ns = np.array([25, 50, 100, 150, 200, 300])
 plt.plot(sim_ns, [simulated_power(4.0, sigma, n) for n in sim_ns], "o", color="C1", label="delta = 4, simulated")
-plt.axhline(0.8, color="gray", ls=":"); plt.axhline(0.05, color="gray", ls=":")
+plt.axhline(0.8, color="gray", ls="--", lw=1, label="80% power target")
+plt.axhline(0.05, color="gray", ls=":", label="alpha = 0.05: power when delta = 0")
 plt.xlabel("n per arm"); plt.ylabel("power = P(reject H0 | H1)")
 plt.title("Power of the two-sample z-test (sigma = 10, alpha = 0.05)")
-plt.legend(); plt.show()
+plt.legend(fontsize=8); plt.show()
 """)
 
 nb.md(r"""
 The simulated points fall on the analytic curve. Read the plot the way an experimenter does: with
 $n = 50$ a 4-minute effect is caught only half the time, and halving the effect to 2 minutes drops the power
-at $n = 50$ to $0.17$ — power grows with $\sqrt n$, so a half-size effect needs *four times* the data. The
-dotted line at $0.05$ is where every curve starts: at $\delta = 0$ the "power" is just the false-positive rate.
+at $n = 50$ to $0.17$ — the distance $\delta/\text{SE}$ between the null and the alternative grows with
+$\sqrt n$, so a half-size effect needs *four times* the data. The dotted line at $0.05$ is the floor every
+curve falls towards as $n$ or $\delta$ shrinks: with no signal, the "power" is just the false-positive rate.
+
+Where does one point on these curves come from? The standardised difference $Z$ is $\mathcal N(0, 1)$ if $H_0$
+is true and $\mathcal N(\delta/\text{SE}, 1)$ if $H_1$ is. Drawing both bells for the 4-minute effect turns
+$\alpha$, $\beta$ and the power into areas.
+""")
+
+nb.code(r"""
+zgrid = np.linspace(-4, 7, 600)
+zc = stats.norm.ppf(0.975)
+fig, axes = plt.subplots(1, 2, figsize=(11, 3.8), sharey=True)
+for ax, n_ in zip(axes, (50, 100)):
+    shift = delta / (sigma * np.sqrt(2.0 / n_))                       # delta / SE: how far H1 sits from H0
+    pdf0, pdf1 = stats.norm.pdf(zgrid), stats.norm.pdf(zgrid - shift)
+    ax.plot(zgrid, pdf0, color="C0", label="Z if H0 is true")
+    ax.plot(zgrid, pdf1, color="C3", label="Z if H1 is true")
+    ax.fill_between(zgrid, pdf1, where=zgrid >= zc, color="C3", alpha=0.35, label="power (H1 true, rejected)")
+    ax.fill_between(zgrid, pdf1, where=np.abs(zgrid) < zc, facecolor="none", edgecolor="C3", hatch="///", lw=0,
+                    label="beta (H1 true, missed)")
+    ax.fill_between(zgrid, pdf0, where=np.abs(zgrid) >= zc, color="C0", alpha=0.7, label="alpha (H0 true, false alarm)")
+    ax.axvline(zc, color="k", ls="--", lw=1); ax.axvline(-zc, color="k", ls="--", lw=1)
+    ax.set_title(f"n = {n_} per arm: delta/SE = {shift:.2f}, power = {power_two_sample_z(delta, sigma, n_):.3f}")
+    ax.set_xlabel("standardised difference Z (dashed: reject outside +/-1.96)")
+axes[0].set_ylabel("density"); axes[0].set_ylim(0, 0.62)
+axes[0].legend(fontsize=8, loc="upper right")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the blue null curve and the dashed cut-offs are identical in both panels, so the false-alarm
+area stays $0.05$ whatever $n$ is. Only the red alternative moves: doubling $n$ takes $\delta/\text{SE}$ from
+$2.00$ to $2.83$ (it grows with $\sqrt n$), the power area from $0.516$ to $0.807$, and the missed area $\beta$
+from $0.484$ to $0.193$.
 
 **Try it yourself:** call `n_per_arm(2.0, 10.0)` and `n_per_arm(4.0, 10.0, power=0.9)` — what do halving the
 effect and raising the power from 80% to 90% each cost in sample size?
@@ -267,10 +312,42 @@ print(f"the SAME numbers analysed unpaired (Welch): p = {welch_t(before, after)[
 nb.md(r"""
 Hand computation and scipy agree to every digit, and Student's pooled test is close here because the two
 variances happen to be similar. The paired example is the dramatic one: $p = 0.008$ paired, $p = 0.40$
-unpaired, from the same twelve numbers. The machines differ from each other by about 2.9 minutes while the
-change moves each machine by about 1.3; pairing subtracts the machine effect
-($\operatorname{Var}(\bar x - \bar y) = (\sigma_x^2 + \sigma_y^2 - 2\rho\sigma_x\sigma_y)/n$ with $\rho = 0.98$),
-the unpaired analysis cannot. The next cell measures that gain as a function of $\rho$.
+unpaired, from the same twelve numbers. The machines differ from each other by about 2 to 3 minutes (standard
+deviations 2.9 before, 2.2 after) while the change moves each machine by about 1.3; pairing subtracts the
+machine effect ($\operatorname{Var}(\bar x - \bar y) = (\sigma_x^2 + \sigma_y^2 - 2\rho\sigma_x\sigma_y)/n$ with
+$\rho = 0.98$), the unpaired analysis cannot. The next plot shows both halves of that sentence.
+""")
+
+nb.code(r"""
+se_pair = d.std(ddof=1) / np.sqrt(len(d))
+se_unpair = np.sqrt(before.var(ddof=1) / len(before) + after.var(ddof=1) / len(after))
+hw_pair = stats.t.ppf(0.975, len(d) - 1) * se_pair
+hw_unpair = stats.t.ppf(0.975, welch_t(before, after)[1]) * se_unpair
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 3.8), gridspec_kw={"width_ratios": [1, 1.4]})
+for b_, a_ in zip(before, after):
+    ax1.plot([0, 1], [b_, a_], "o-", color="C0")
+ax1.set_xticks([0, 1]); ax1.set_xticklabels(["before", "after"]); ax1.set_xlim(-0.3, 1.3)
+ax1.set_xlabel("measurement"); ax1.set_ylabel("cycle time (minutes)")
+ax1.set_title("Lines far apart, each one drops a little")
+
+ax2.plot(d, np.full(len(d), 1.25), "o", color="C0", alpha=0.6, label="the six differences")
+ax2.errorbar(d.mean(), 1, xerr=hw_pair, fmt="o", color="C0", capsize=5,
+             label=f"paired 95% CI: {d.mean() - hw_pair:.2f} to {d.mean() + hw_pair:.2f}")
+ax2.errorbar(d.mean(), 0, xerr=hw_unpair, fmt="s", color="C3", capsize=5,
+             label=f"unpaired 95% CI: {d.mean() - hw_unpair:.2f} to {d.mean() + hw_unpair:.2f}")
+ax2.axvline(0, color="k", lw=1)
+ax2.set_yticks([0, 1]); ax2.set_yticklabels([f"unpaired Welch\nSE = {se_unpair:.2f}", f"paired t\nSE = {se_pair:.2f}"])
+ax2.set_ylim(-0.5, 2.1); ax2.set_xlabel("before - after (minutes)"); ax2.set_ylabel("analysis")
+ax2.set_title("Same twelve numbers, two standard errors"); ax2.legend(fontsize=8, loc="upper right")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the six lines are far apart but nearly parallel, each dropping by $0.5$ to $2.2$ minutes, which
+is what a correlation of $0.98$ looks like. Subtracting within a line removes the gap between lines: the standard
+error falls from $1.48$ to $0.31$, and the interval shrinks from one that covers 0 ($-2.01$ to $4.64$) to one that
+excludes it ($0.52$ to $2.12$). The next cell measures that gain as a function of $\rho$.
 """)
 
 nb.code(r"""
@@ -287,7 +364,7 @@ pw = np.array([paired_vs_unpaired_power(r) for r in rhos])
 plt.plot(rhos, pw[:, 0], "o-", label="paired t-test")
 plt.plot(rhos, pw[:, 1], "s--", label="unpaired Welch t-test")
 plt.xlabel("correlation rho between paired measurements"); plt.ylabel("power")
-plt.title("n = 15 pairs, effect 0.5 sd: pairing pays off as rho grows"); plt.legend(); plt.show()
+plt.title("n = 15 pairs, effect 0.5 sd: paired power rises with rho, unpaired power falls"); plt.legend(); plt.show()
 for r, (pp, pu) in zip(rhos, pw):
     print(f"rho = {r:.2f}: power paired {pp:.3f}   unpaired {pu:.3f}")
 """)
@@ -295,8 +372,10 @@ for r, (pp, pu) in zip(rhos, pw):
 nb.md(r"""
 At $\rho = 0$ the two tests are nearly equal (the paired test even loses a little, having $n - 1$ instead of
 about $2n - 2$ degrees of freedom); at $\rho = 0.9$ the paired test detects the effect almost always while the
-unpaired one still misses it more than half the time. This is why before/after designs, repeated measures,
-and model comparisons on *shared* folds or test examples are analysed paired.
+unpaired one misses it about nine times in ten. Its power even falls as $\rho$ grows: its standard error still
+treats the arms as independent, so its statistic settles near $0.5/0.365 = 1.37$, below the cut-off of about
+$2.05$. This is why before/after designs, repeated measures, and model comparisons on *shared* folds or test
+examples are analysed paired.
 
 **Try it yourself:** set `delta = 0.3` and `n = 30` — does the crossover point move?
 """)
@@ -308,7 +387,7 @@ nb.md(r"""
 Conversions by variant: A 200/4000, B 240/4000. Two-proportion z-test with the pooled rate
 $\bar\theta = (x_1 + x_2)/(n_1 + n_2)$, and the same data as a $2 \times 2$ table with Pearson's
 $\chi^2 = \sum (O - E)^2/E$, $E_{ij} = R_i C_j / N$. For a $2 \times 2$ table $\chi^2 = z^2$ exactly.
-We also run a small-sample table through Fisher's exact test and Yates's correction.
+We also run a smaller table through Fisher's exact test and Yates's correction.
 """)
 
 nb.code(r"""
@@ -337,21 +416,28 @@ print(f"chi-square by hand: chi2 = {chi2:.4f}, dof = {dof}, p = {p_chi:.4f}    z
 sp = stats.chi2_contingency(table, correction=False)
 print(f"scipy chi2_contingency(correction=False): chi2 = {sp.statistic:.4f}, p = {sp.pvalue:.4f}")
 
-# small-sample table: nausea 30/200 treated vs 18/200 placebo
+# a smaller table: nausea 30/200 treated vs 18/200 placebo
 small = np.array([[30, 170], [18, 182]])
 chi2_s, p_s, _, E_s = chi2_independence(small)
 print(f"\nside-effect table: expected = {E_s[0].round(1)} per row;  chi2 = {chi2_s:.3f}, p = {p_s:.4f}")
 print(f"with Yates's correction: p = {stats.chi2_contingency(small, correction=True).pvalue:.4f}")
 print(f"Fisher's exact test   : p = {stats.fisher_exact(small).pvalue:.4f}")
+_, _, ci_s = two_prop_z(18, 200, 30, 200)
+print(f"95% CI for the excess nausea rate: [{ci_s[0]:+.4f}, {ci_s[1]:+.4f}]")
 """)
 
 nb.md(r"""
 $z^2 = 3.848 = \chi^2$ to all shown digits, and the p-values coincide: the chi-square test of a $2 \times 2$
 table *is* the two-sided two-proportion z-test. The confidence interval for the lift,
-$[0.00001, 0.020]$, excludes zero by a hair just as $p = 0.0498$ sits a hair under $0.05$ — Section 6 explains
-why these must agree. On the small side-effect table the three p-values ($0.065$, $0.091$, $0.090$) disagree
-noticeably; none reaches $0.05$, but the interval for the excess nausea rate stretches up to 12 percentage
-points, which is the number a safety review should read.
+$[0.00001, 0.020]$, excludes zero by a hair just as $p = 0.0498$ sits a hair under $0.05$. Section 6 explains
+why a test and an interval built from the same standard error must agree. These two use slightly different ones
+(pooled and unpooled), so they can disagree in borderline cases; here the two are almost equal and they agree.
+
+On the smaller side-effect table the three p-values ($0.065$, $0.091$, $0.090$) differ visibly. With expected
+counts this large the plain chi-square is already well calibrated (exact enumeration for 200 per arm at a common
+rate of 12% gives a true size of $0.049$ at $\alpha = 0.05$), and Yates and Fisher are conservative ($0.035$);
+Fisher earns its keep when expected counts fall below about 5. None of the three reaches $0.05$, but the interval
+for the excess nausea rate stretches up to 12 percentage points, which is the number a safety review should read.
 """)
 
 # ---------------------------------------------------------------- 5. permutation test
@@ -390,11 +476,51 @@ p_perm = (1 + np.sum(np.abs(perm_diffs) >= abs(t_obs))) / (B + 1)
 print(f"\npermutation test: p = {p_perm:.4f}   (B = {B} shuffles)")
 print(f"Welch t-test    : p = {stats.ttest_ind(rev_b, rev_a, equal_var=False).pvalue:.4f}")
 
-plt.hist(perm_diffs, bins=60, alpha=0.8, label="difference of means under shuffled labels")
-plt.axvline(t_obs, color="C3", ls="--", label=f"observed difference = {t_obs:.2f}")
-plt.axvline(-t_obs, color="C3", ls=":")
+counts, edges, patches = plt.hist(perm_diffs, bins=60, color="C0", alpha=0.8,
+                                  label="shuffled differences (red: at least as extreme as observed)")
+for patch, left, right in zip(patches, edges[:-1], edges[1:]):
+    if abs(left + right) / 2 >= abs(t_obs):
+        patch.set_facecolor("C3")
+plt.axvline(t_obs, color="k", ls="--", label=f"observed difference = {t_obs:.2f}")
+plt.axvline(-t_obs, color="k", ls=":", label="its mirror image (two-sided test)")
+plt.ylim(0, counts.max() * 1.45)
 plt.xlabel("mean(B) - mean(A) after shuffling"); plt.ylabel("count")
-plt.title("Permutation null distribution of the revenue difference"); plt.legend(); plt.show()
+plt.title(f"Permutation null distribution: the red tails hold p = {p_perm:.2f}")
+plt.legend(fontsize=8, loc="upper left"); plt.show()
+""")
+
+nb.md(r"""
+Why is the null distribution so wide when the observed gap is $0.56$? Look at the metric itself.
+""")
+
+nb.code(r"""
+pooled_sorted = np.sort(pooled)[::-1]
+share = pooled_sorted.cumsum() / pooled_sorted.sum()
+n_buyers = int((pooled > 0).sum())
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 3.8))
+ax1.bar(-20, (pooled == 0).sum(), width=30, color="0.5", label=f"exactly 0: {(pooled == 0).sum():,} users")
+ax1.hist(pooled[pooled > 0], bins=np.arange(0, 1075, 25), color="C0", label=f"bought something: {n_buyers} users")
+ax1.set_yscale("log"); ax1.set_xlabel("revenue per user"); ax1.set_ylabel("users (log scale)")
+ax1.set_title("Mostly zeros, plus a long right tail"); ax1.legend()
+
+ax2.plot(np.arange(1, n_buyers + 1), share[:n_buyers], color="C0")
+for k_ in (10, 40):
+    ax2.plot(k_, share[k_ - 1], "o", color="C3")
+    ax2.annotate(f"top {k_} users: {share[k_ - 1]:.0%} of revenue", (k_, share[k_ - 1]), xytext=(k_ + 15, share[k_ - 1] - 0.03))
+ax2.set_xlabel(f"number of highest-spending users counted (of {len(pooled):,})")
+ax2.set_ylabel("cumulative share of total revenue")
+ax2.set_title("A few orders carry the mean")
+plt.tight_layout(); plt.show()
+print(f"standard error of the difference of means: {np.sqrt(rev_a.var(ddof=1) / n_users + rev_b.var(ddof=1) / n_users):.2f}   (observed gap {t_obs:.2f})")
+""")
+
+nb.md(r"""
+**Notice that** 3,751 of the 4,000 users sit at exactly zero and one order of 1,026 sits alone at the far right
+(log scale on the left). The right panel shows what that does to the mean: the top 10 users hold 21% of all
+revenue and the top 40, just 1% of users, hold 52%. The difference of means therefore depends largely on which
+arm a few big orders landed in, which is why its standard error ($1.13$) is twice the observed gap ($0.56$). It is
+also why 88% of the A-B pairs in the next cell tie at zero.
 """)
 
 nb.code(r"""
@@ -417,7 +543,9 @@ def mann_whitney_p(a, b):
 u1, p_mw = mann_whitney_p(rev_b, rev_a)
 sp = stats.mannwhitneyu(rev_b, rev_a, alternative="two-sided", method="asymptotic")
 print(f"Mann-Whitney by hand: U = {u1:.1f}, p = {p_mw:.4f}    scipy: U = {sp.statistic:.1f}, p = {sp.pvalue:.4f}")
-print(f"P(a random B user out-spends a random A user) = U / (n1 n2) = {u1 / (n_users**2):.4f}   (0.5 under H0)")
+p_gt, p_lt = (rev_b[:, None] > rev_a[None, :]).mean(), (rev_b[:, None] < rev_a[None, :]).mean()
+print(f"random B user against random A user: P(B > A) = {p_gt:.4f}, P(A > B) = {p_lt:.4f}, tied = {1 - p_gt - p_lt:.4f}")
+print(f"U / (n1 n2) = P(B > A) + P(tie) / 2 = {u1 / n_users**2:.4f}   (0.5 under H0)")
 
 # a tiny example where the exact permutation distribution can be enumerated
 from itertools import combinations
@@ -435,14 +563,21 @@ Two lessons in one output. First, the treatment *does* raise the purchase rate (
 the everyday reality of revenue metrics — they need far more users than conversion metrics, or a more robust
 statistic. Second, the permutation p-value and Welch's p-value are close here because the central limit
 theorem has had 4,000 observations to work with even for this ugly distribution; the permutation test's
-advantage is that it would remain exact with 50 users per arm, or for a trimmed mean or a median, where the
-t-test's approximation fails. Mann–Whitney asks a different question — does a random B user out-spend a random
-A user more than half the time? — and the hand computation matches scipy's once ties and the continuity
-correction are handled. The 3-vs-3 example shows the granularity of exact tests: the smallest possible
-two-sided p-value is $2/20 = 0.10$, so no result from three observations per group can be "significant at 5%".
+advantage is that it stays valid whatever the distribution: its false-positive rate cannot exceed $\alpha$. That
+does not make a small experiment informative: with 50 users per arm (about five buyers in all) both tests sit far
+below nominal, because there is very little information to work with. A separate simulation of 4,000 such null
+experiments gives rejection rates of 1.5% (permutation) and 1.1% (Welch) at $\alpha = 0.05$.
 
-**Try it yourself:** replace the statistic in the permutation loop by the difference of *medians* or of
-20%-trimmed means (`stats.trim_mean(x, 0.2)`) — the code does not change otherwise. That is the point.
+Mann–Whitney asks a different question: is a random B user more likely to out-spend a random A user than the
+other way round? Here 6.4% against 5.7%, with 88% of pairs tied at zero. The hand computation matches scipy's
+once ties and the continuity correction are handled. The 3-vs-3 example shows the granularity of exact tests:
+the smallest possible two-sided p-value is $2/20 = 0.10$, so no result from three observations per group can be
+"significant at 5%".
+
+**Try it yourself:** replace the statistic in the permutation loop by `stats.trim_mean(x, 0.01)`, the mean with
+the top and bottom 1% removed. Then try the median or the 20%-trimmed mean and explain why the test returns
+$p = 1$: both are 0 in every shuffle because 94% of users spend nothing. The machinery accepts any statistic, but
+the statistic must be able to see the effect.
 """)
 
 # ---------------------------------------------------------------- 6. CI–test duality, TOST
@@ -487,10 +622,12 @@ ses = np.array([0.4, 0.8, 1.2, 2.0])
 plt.axhspan(-2, 2, color="C2", alpha=0.15, label="equivalence margin +/-2")
 for i, se_ in enumerate(ses):
     _, equiv, ci90 = tost(0.5, se_, 2.0)
-    plt.errorbar(i, 0.5, yerr=[[0.5 - ci90[0]], [ci90[1] - 0.5]], fmt="o", capsize=5, color="C2" if equiv else "C3")
-plt.axhline(0, color="k", lw=0.8)
-plt.xticks(range(len(ses)), [f"SE = {s}" for s in ses]); plt.ylabel("difference (90% CI)")
-plt.title("TOST: equivalence (green) iff the 90% CI fits inside the margin"); plt.legend(loc="upper left"); plt.show()
+    plt.errorbar(i, 0.5, yerr=[[0.5 - ci90[0]], [ci90[1] - 0.5]], fmt="o" if equiv else "s", capsize=5, color="C2" if equiv else "C3")
+    plt.text(i + 0.06, 0.62, "equivalent" if equiv else "inconclusive", fontsize=9, color="C2" if equiv else "C3")
+plt.axhline(0, color="k", lw=0.8); plt.xlim(-0.4, 3.75)
+plt.xticks(range(len(ses)), [f"SE = {s}" for s in ses]); plt.xlabel("precision of the study (standard error of the difference)")
+plt.ylabel("difference (90% CI)")
+plt.title("TOST: equivalence iff the 90% CI fits inside the margin"); plt.legend(loc="upper left"); plt.show()
 """)
 
 nb.md(r"""
@@ -538,9 +675,11 @@ def bh_adjust(p):
     return adj
 
 # FWER blow-up under the global null
+sim_m, sim_fwer = [], []
 for m in (1, 2, 5, 10, 20, 50, 100):
     pvals = rng.random((20_000, m))
-    print(f"m = {m:3d}: simulated P(any p < 0.05) = {(pvals.min(axis=1) < 0.05).mean():.3f}   formula 1 - 0.95^m = {1 - 0.95**m:.3f}")
+    sim_m.append(m); sim_fwer.append((pvals.min(axis=1) < 0.05).mean())
+    print(f"m = {m:3d}: simulated P(any p < 0.05) = {sim_fwer[-1]:.3f}   formula 1 - 0.95^m = {1 - 0.95**m:.3f}")
 
 p10 = np.array([0.001, 0.011, 0.012, 0.019, 0.040, 0.045, 0.200, 0.350, 0.600, 0.900])
 print(f"\n{'p':>8s} {'Bonferroni':>11s} {'Holm':>8s} {'BH':>8s}")
@@ -570,20 +709,57 @@ for name, s in stats_.items():
     print(f"{name:14s} {s['fwer'] / reps:7.3f} {s['fdr'] / reps:7.3f} {s['power'] / reps:7.3f}")
 
 ms = np.arange(1, 101)
-plt.plot(ms, 1 - 0.95**ms, label="FWER of uncorrected tests, 1 - 0.95^m")
-plt.plot(ms, 1 - (1 - 0.05 / ms)**ms, label="FWER with Bonferroni (alpha / m)")
-plt.axhline(0.05, color="gray", ls=":")
+plt.plot(ms, 1 - 0.95**ms, color="C0", label="uncorrected tests: 1 - 0.95^m")
+plt.plot(sim_m, sim_fwer, "o", color="C0", label="uncorrected, simulated")
+plt.plot(ms, 1 - (1 - 0.05 / ms)**ms, color="C1", lw=2.5, label="Bonferroni (alpha / m): stays just under 0.05")
 plt.xlabel("number of independent tests m"); plt.ylabel("P(at least one false rejection)")
-plt.title("Testing many hypotheses without correction guarantees false alarms"); plt.legend(); plt.show()
+plt.title("Without correction, a false alarm becomes near-certain as m grows"); plt.legend(loc="center right"); plt.show()
 """)
 
 nb.md(r"""
 On the ten p-values Bonferroni and Holm reject only the smallest, while BH rejects four — including
 $p = 0.011$, which exceeded its own threshold $0.010$ but is swept in by the step-up rule. The simulation
 shows the trade: uncorrected testing has a family-wise error rate near 1 (some false discovery in almost
-every screen); Bonferroni and Holm hold it at $0.05$ but find only about 40% of the real effects; BH lets the
-FDR be about $0.04$ (close to its guarantee $q\,m_0/m = 0.04$) and in exchange finds about 70% of them. Which
-guarantee you want depends on the cost of one false lead versus one missed discovery.
+every screen); Bonferroni and Holm hold it below $0.05$ (about $0.04$ here) but find only about 32% of the real
+effects; BH lets the FDR be about $0.04$ (close to its guarantee $q\,m_0/m = 0.04$) and in exchange finds about
+61% of them. Which guarantee you want depends on the cost of one false lead versus one missed discovery. The next
+plot draws both results: the step-up rule as geometry, and the simulated table as bars.
+""")
+
+nb.code(r"""
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.2))
+p_sorted = np.sort(p10); m10 = len(p10); ranks = np.arange(1, m10 + 1)
+rej_bh = bh_adjust(p_sorted) <= 0.05
+ax1.plot(ranks, 0.05 * ranks / m10, "-", color="C2", label="BH line: 0.05 i / 10")
+ax1.plot(ranks, 0.05 / (m10 - ranks + 1), "--", color="C1", label="Holm: 0.05 / (11 - i)")
+ax1.axhline(0.05 / m10, color="C0", ls=":", label="Bonferroni: 0.05 / 10")
+ax1.plot(ranks[rej_bh], p_sorted[rej_bh], "o", color="C3", ms=7, label="rejected by BH")
+ax1.plot(ranks[~rej_bh], p_sorted[~rej_bh], "o", mfc="white", mec="k", ms=7, label="not rejected by BH")
+ax1.annotate("rank 2: 0.011 is above the line (0.010)\nbut is swept in", (2, 0.011), xytext=(0.62, 0.0215), fontsize=9,
+             arrowprops=dict(arrowstyle="->"))
+ax1.annotate("rank 4: last point under the line", (4, 0.019), xytext=(3.25, 0.0335), fontsize=9,
+             arrowprops=dict(arrowstyle="->"))
+ax1.set_xlim(0.5, 6.5); ax1.set_ylim(0, 0.055)
+ax1.set_xlabel("rank i of the sorted p-value (ranks 7 to 10 are off the scale)"); ax1.set_ylabel("p-value")
+ax1.set_title("Ten p-values: BH rejects up to the LAST point under its line"); ax1.legend(fontsize=8, loc="upper left")
+
+names = list(stats_)
+for j, (key, lab) in enumerate((("fwer", "FWER"), ("fdr", "FDR"), ("power", "power"))):
+    bars = ax2.bar(np.arange(len(names)) + (j - 1) * 0.27, [stats_[nm][key] / reps for nm in names], 0.27, label=lab)
+    ax2.bar_label(bars, fmt="%.2f", fontsize=8)
+ax2.axhline(0.05, color="gray", ls=":", label="0.05")
+ax2.set_xticks(np.arange(len(names))); ax2.set_xticklabels(names)
+ax2.set_xlabel("procedure"); ax2.set_ylabel(f"rate over {reps:,} simulated screens"); ax2.set_ylim(0, 1.12)
+ax2.set_title(f"{m} tests, {m1} real effects: what each procedure buys"); ax2.legend(fontsize=8, loc="upper right")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** on the left Bonferroni's flat line and Holm's slowly rising curve admit only rank 1, while BH's
+straight line reaches rank 4. The point at rank 2 ($0.011$) lies just above the line ($0.010$) yet is rejected,
+because BH looks for the last point under the line, not the first one above it. On the right, BH's FWER of $0.40$
+shows it does not control that quantity; what it buys is an FDR of $0.04$ with power $0.61$, almost double the
+$0.32$ to $0.33$ of Bonferroni and Holm.
 
 **Try it yourself:** set `m1 = 50` (half the hypotheses real) and re-run — BH's power rises while the FDR
 bound $q\,m_0/m$ falls to $0.025$; Bonferroni's power does not move. Why?
@@ -650,6 +826,33 @@ Simpson's paradox, produced by confounded assignment. Randomisation makes the tr
 have the same device mix and recovers $+0.5$. Blocking then removes the device variance from the comparison:
 the standard deviation of the estimate drops from about $0.25$ to $0.15$, equivalent to nearly tripling the
 sample size for free. The A/A test rejecting at the nominal 5% is the health check that the pipeline is honest.
+The next plot shows both: the paradox itself, and what blocking does to the spread of the estimate.
+""")
+
+nb.code(r"""
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
+for name, mask, col, ls in (("desktop", ~mobile, "C1", "-"), ("all users", np.ones(N, bool), "k", "--"), ("mobile", mobile, "C0", "-")):
+    ctrl, trt = mask & ~treated_obs, mask & treated_obs
+    ax1.plot([0, 1], [y_obs[ctrl].mean(), y_obs[trt].mean()], ls, color=col, label=f"{name}: {y_obs[trt].mean() - y_obs[ctrl].mean():+.2f}")
+    ax1.scatter([0, 1], [y_obs[ctrl].mean(), y_obs[trt].mean()], s=[ctrl.sum() / 40, trt.sum() / 40], color=col, zorder=3)
+ax1.set_xticks([0, 1]); ax1.set_xticklabels(["did not opt in", "opted in"]); ax1.set_xlim(-0.3, 1.3)
+ax1.set_xlabel("observational group (marker area = number of users)"); ax1.set_ylabel("mean minutes on site")
+ax1.set_title("Simpson's paradox: up within each device, down overall"); ax1.legend(title="effect estimate", fontsize=8)
+
+bins_est = np.linspace(-0.4, 1.4, 46)
+ax2.hist(est_simple, bins=bins_est, alpha=0.6, color="C3", label=f"simple randomisation: sd {est_simple.std():.3f}")
+ax2.hist(est_strat, bins=bins_est, alpha=0.6, color="C2", label=f"stratified by device: sd {est_strat.std():.3f}")
+ax2.axvline(true_effect, color="k", ls="--", label="true effect +0.5")
+ax2.set_xlabel("estimated effect from one experiment of n = 400 (minutes)"); ax2.set_ylabel("experiments (of 2,000)")
+ax2.set_title("Blocking narrows the estimate, without bias"); ax2.legend(fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** both device lines rise by the true effect ($+0.48$ and $+0.51$), while the dashed all-users line
+falls by $1.88$: it joins a mostly-desktop control group to a mostly-mobile treated group, as the marker sizes
+show. On the right, both designs centre on $+0.5$, so neither is biased; blocking only narrows the spread, from
+sd $0.249$ to $0.149$.
 """)
 
 # ---------------------------------------------------------------- 9. peeking
@@ -658,8 +861,8 @@ nb.md(r"""
 
 Two arms, standard normal noise, 1,000 users per arm in total. We look at the z-statistic after every
 batch and stop as soon as $|Z| > 1.96$. Under $H_0$ the planned single look rejects 5% of the time; with
-repeated looks the running statistic is a random walk that gets many chances to cross. Then the fix:
-Pocock's constant boundary for a pre-specified number of looks.
+repeated looks the running sum is a random walk and $Z$ is that walk rescaled, so it gets many chances to
+cross. Then the fix: Pocock's constant boundary for a pre-specified number of looks.
 """)
 
 nb.code(r"""
@@ -677,12 +880,13 @@ fprs = []
 for L in looks:
     fpr_any, fpr_final, _ = peeking_fpr(L, 1000 // L, 3_000)
     fprs.append(fpr_any)
-    print(f"{L:2d} look(s): P(stop early with 'significant' result | H0) = {fpr_any:.3f}   (tabulated {armitage[L]:.3f}; at the final look alone {fpr_final:.3f})")
+    print(f"{L:2d} look(s): P(significant at some look | H0) = {fpr_any:.3f}   (tabulated {armitage[L]:.3f}; at the final look alone {fpr_final:.3f})")
 
 plt.plot(looks, fprs, "o-", label="simulated, stop at first |Z| > 1.96")
 plt.plot(looks, [armitage[L] for L in looks], "k--", label="Armitage et al. (1969)")
 plt.axhline(0.05, color="gray", ls=":", label="nominal 0.05")
-plt.xscale("log"); plt.xlabel("number of looks at the data"); plt.ylabel("false-positive rate under H0")
+plt.xscale("log"); plt.xticks(looks, looks); plt.minorticks_off()
+plt.xlabel("number of looks at the data (log scale)"); plt.ylabel("false-positive rate under H0")
 plt.title("Optional stopping inflates the type I error"); plt.legend(); plt.show()
 
 # the fix: Pocock boundaries for a pre-specified number of looks
@@ -691,16 +895,63 @@ for L, zb in ((5, 2.413), (10, 2.555), (20, 2.672)):
     print(f"Pocock boundary |Z| > {zb} with {L:2d} looks: false-positive rate = {fpr_any:.3f}")
 _, _, z20 = peeking_fpr(20, 50, 3_000)
 stopped = np.argmax(np.abs(z20) > 1.96, axis=1); ever = np.any(np.abs(z20) > 1.96, axis=1)
-print(f"\namong null experiments stopped early, median stopping look = {np.median(stopped[ever]) + 1:.0f} of 20;"
-      f" mean |Z| at stopping = {np.abs(z20[ever, stopped[ever]]).mean():.2f} (an 'effect' that does not exist)")
+stop_look = stopped[ever] + 1
+effect_at_stop = np.abs(z20[ever, stopped[ever]]) * np.sqrt(2 / (50 * stop_look))     # |difference of means| in sd units
+print(f"\namong null experiments that stopped with a false alarm, median stopping look = {np.median(stop_look):.0f} of 20;"
+      f" mean |estimated effect| at stopping = {effect_at_stop.mean():.2f} sd (truth 0)")
 """)
 
 nb.md(r"""
 The simulation reproduces the classical table: one look, 5%; five looks, 14%; twenty looks, 25%. Note the
-last column — at the *final* look alone the rate is still 5%; the inflation comes entirely from the option
+last column — at the *final* look alone the rate is still about 5%; the inflation comes entirely from the option
 to stop earlier. Pocock's boundaries restore the nominal rate at the price of needing $|Z| > 2.4$ to $2.7$
 instead of $1.96$; O'Brien–Fleming boundaries spend less $\alpha$ early and are the clinical-trial default.
-The stopped experiments report large "effects" that are pure noise — the winner's curse of optional stopping.
+The stopped experiments report large "effects" that are pure noise, $0.25$ sd on average when the truth is 0 and
+the final-look standard error is $0.045$ sd — the winner's curse of optional stopping. The next plot shows the
+mechanism behind both results.
+""")
+
+nb.code(r"""
+looks20 = np.arange(1, 21)
+rate_196, rate_pocock = (np.abs(z20) > 1.96).any(axis=1).mean(), (np.abs(z20) > 2.672).any(axis=1).mean()
+# Draw 40 of the 3,000 paths: the first slice of 40 whose crossing counts (9 and 3) are close to the rates over all
+# paths. A slice this small is noisy: rows 0 to 39 would show 9 and 6, rows 40 to 79 would show 17 and 4.
+drawn = np.arange(80, 120)
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+for i in drawn:
+    ax1.plot(looks20, z20[i], color="0.75", lw=0.7, zorder=1)
+    if ever[i]:
+        ax1.plot(looks20[:stopped[i] + 1], z20[i, :stopped[i] + 1], color="C3", lw=1.1, zorder=2)
+        ax1.plot(looks20[stopped[i]], z20[i, stopped[i]], "o", color="C3", ms=5, zorder=3)
+for sgn in (1, -1):
+    ax1.axhline(sgn * 1.96, color="k", ls="--", lw=1, label=f"|Z| = 1.96: crossed by {rate_196:.1%} of all 3,000 paths" if sgn == 1 else None)
+    ax1.axhline(sgn * 2.672, color="k", ls=":", lw=1, label=f"Pocock, 20 looks, |Z| = 2.672: crossed by {rate_pocock:.1%}" if sgn == 1 else None)
+ax1.set_xticks(looks20[1::2]); ax1.set_xlabel("look k (50 more users per arm each time)"); ax1.set_ylabel("running z-statistic")
+ax1.set_ylim(-3.8, 5.0)                                          # room for the legend above the paths and Pocock's line
+ax1.set_title(f"40 null experiments: {ever[drawn].sum()} stop at a false alarm (red)"); ax1.legend(fontsize=8, loc="upper right")
+
+ax2.bar(looks20, np.bincount(stop_look, minlength=21)[1:], color="C3", alpha=0.45)
+ax2.set_xticks(looks20[1::2]); ax2.set_xlabel("look at which the experiment stopped")
+ax2.set_ylabel(f"experiments stopped (bars, {ever.sum()} in all)")
+axr = ax2.twinx()
+axr.plot(looks20, 1.96 * np.sqrt(2 / (50 * looks20)), "k-", label="smallest |effect| that can stop here")
+axr.plot(looks20, [effect_at_stop[stop_look == k].mean() for k in looks20], "ko", ms=4, label="mean |effect| reported at the stop")
+axr.set_ylim(0, None); axr.set_ylabel("|estimated effect| (sd units)")
+ax2.set_title("False alarms come early, with the largest fake effects"); axr.legend(fontsize=8, loc="upper right")
+plt.tight_layout(); plt.show()
+print(f"false alarms within the first 5 looks: {np.mean(stop_look <= 5):.0%};"
+      f"  mean |effect| at the stop: {effect_at_stop[stop_look == 1].mean():.2f} sd at look 1, {effect_at_stop[stop_look == 20].mean():.2f} sd at look 20 (truth 0)")
+""")
+
+nb.md(r"""
+**Notice that** the paths swing widely at first and settle later, because each new batch matters less against
+everything already averaged in, so 58% of the false alarms arrive within the first 5 of 20 looks. Pocock's dotted
+band is crossed far less often: by 4.9% of all 3,000 paths against 24.5% for the dashed line. (The 40 paths drawn
+are a slice picked to show about those rates; 40 paths are too few to show them reliably, as the comment in the
+code says.) On the right, stopping early requires a large estimate (at least $0.39$ sd at look 1, only $0.09$ sd
+at look 20), so the earliest false alarms report the largest effects, about $0.47$ sd on average at look 1, when
+the truth is 0.
 
 **Try it yourself:** replace `z_crit=1.96` by the Bonferroni-per-look value `stats.norm.ppf(1 - 0.025 / L)`
 for `L = 10` — it is valid, but how much stricter than Pocock's $2.555$ is it?
@@ -714,9 +965,9 @@ Logistic regression versus $k$-nearest neighbours on the bundled breast-cancer d
 held-out set: the two models' per-example results are *paired*, so we use **McNemar's test** on the
 discordant counts $b$ (A right, B wrong) and $c$ (B right, A wrong),
 
-$$\chi^2 = \frac{(|b - c| - 1)^2}{b + c}, \qquad \text{exact: } b \sim \text{Binomial}(b + c, \tfrac12).$$
+$$\chi^2 = \frac{(|b - c| - 1)^2}{b + c}, \qquad \text{exact: } b \sim \text{Binomial}(b + c, \tfrac12),$$
 
-Then repeated stratified cross-validation ($10 \times 5$-fold, $J = 50$ paired differences) with the naive
+with $|b - c| - 1$ clipped at 0 when $b = c$. Then repeated stratified cross-validation ($10 \times 5$-fold, $J = 50$ paired differences) with the naive
 paired t-test and the **Nadeau–Bengio** correction, which inflates the variance by
 $(1/J + n_{\text{test}}/n_{\text{train}})/(1/J)$ to account for the overlap between training sets.
 """)
@@ -736,7 +987,7 @@ model_b = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=5))
 def mcnemar(y_true, pred_a, pred_b):
     right_a, right_b = pred_a == y_true, pred_b == y_true
     b = int(np.sum(right_a & ~right_b)); c = int(np.sum(~right_a & right_b))
-    chi2_cc = (abs(b - c) - 1)**2 / (b + c) if b + c > 0 else 0.0
+    chi2_cc = max(abs(b - c) - 1, 0)**2 / (b + c) if b + c > 0 else 0.0
     p_cc = stats.chi2.sf(chi2_cc, 1)
     p_exact = stats.binomtest(min(b, c), b + c, 0.5).pvalue if b + c > 0 else 1.0
     return b, c, chi2_cc, p_cc, p_exact
@@ -765,17 +1016,25 @@ n_test, n_train = len(te), len(tr)
 
 t_naive = diffs.mean() / (diffs.std(ddof=1) / np.sqrt(J))
 p_naive = 2 * stats.t.sf(abs(t_naive), J - 1)
-rho = n_test / n_train
-t_nb = diffs.mean() / np.sqrt((1 / J + rho) * diffs.var(ddof=1))
+test_train_ratio = n_test / n_train
+t_nb = diffs.mean() / np.sqrt((1 / J + test_train_ratio) * diffs.var(ddof=1))
 p_nb = 2 * stats.t.sf(abs(t_nb), J - 1)
 print(f"{J} paired fold differences (logistic - kNN): mean {diffs.mean():+.4f}, sd {diffs.std(ddof=1):.4f}, folds favouring logistic: {(diffs > 0).sum()}")
 print(f"naive paired t-test        : t = {t_naive:.2f}, p = {p_naive:.4f}   (scipy ttest_1samp: p = {stats.ttest_1samp(diffs, 0).pvalue:.4f})")
-print(f"Nadeau-Bengio corrected    : t = {t_nb:.2f}, p = {p_nb:.4f}   (variance inflated by factor {(1 / J + rho) / (1 / J):.1f})")
+print(f"Nadeau-Bengio corrected    : t = {t_nb:.2f}, p = {p_nb:.4f}   (variance inflated by factor {(1 / J + test_train_ratio) / (1 / J):.1f})")
 
-plt.hist(diffs, bins=15, alpha=0.8)
-plt.axvline(0, color="k", lw=1); plt.axvline(diffs.mean(), color="C3", ls="--", label=f"mean difference {diffs.mean():+.4f}")
+step = 1 / 114                                                   # folds hold 113 or 114 test examples, so differences live on this grid
+edges = (np.arange(np.floor(diffs.min() / step), np.ceil(diffs.max() / step) + 2) - 0.5) * step
+counts, _, _ = plt.hist(diffs, bins=edges, alpha=0.8, edgecolor="white", label="the 50 fold differences")
+tc_ = stats.t.ppf(0.975, J - 1)
+hw_naive, hw_nb = tc_ * diffs.std(ddof=1) / np.sqrt(J), tc_ * np.sqrt((1 / J + test_train_ratio) * diffs.var(ddof=1))
+y1, y2 = counts.max() * 1.15, counts.max() * 1.32
+plt.errorbar(diffs.mean(), y1, xerr=hw_naive, fmt="o", color="C3", capsize=5, label=f"naive 95% CI for the mean: [{diffs.mean() - hw_naive:+.4f}, {diffs.mean() + hw_naive:+.4f}]")
+plt.errorbar(diffs.mean(), y2, xerr=hw_nb, fmt="s", color="C2", capsize=5, label=f"Nadeau-Bengio 95% CI: [{diffs.mean() - hw_nb:+.4f}, {diffs.mean() + hw_nb:+.4f}]")
+plt.axvline(0, color="k", lw=1)
+plt.ylim(0, counts.max() * 1.85)
 plt.xlabel("accuracy(logistic) - accuracy(kNN) per fold"); plt.ylabel("count")
-plt.title("10 x 5-fold CV: paired accuracy differences"); plt.legend(); plt.show()
+plt.title("10 x 5-fold CV: naive CI excludes 0, corrected CI does not"); plt.legend(fontsize=8, loc="upper left"); plt.show()
 """)
 
 nb.md(r"""
@@ -784,10 +1043,11 @@ examples, split 6:3, and McNemar cannot distinguish them ($p \approx 0.5$) — t
 about one standard error of a single accuracy. In repeated cross-validation logistic regression wins 33 of 50
 folds and the *naive* paired t-test declares $p = 0.0001$; but it treats the 50 overlapping folds as
 independent. The Nadeau–Bengio correction multiplies the variance by
-$1 + J\,n_{\text{test}}/n_{\text{train}} \approx 13.5$, the t-statistic shrinks by $\sqrt{13.5} \approx 3.7$, and
+$1 + J\,n_{\text{test}}/n_{\text{train}} \approx 13.4$, the t-statistic shrinks by $\sqrt{13.4} \approx 3.7$, and
 $p \approx 0.26$: a plausible 1-point edge for logistic regression that this dataset of 569 examples cannot
-confirm. If you must claim that one model beats another, report the paired difference with its corrected
-interval, over several seeds — not a single number with three decimals.
+confirm. The plot shows the same verdict as two intervals around the same mean: the naive one excludes 0 and the
+corrected one comfortably contains it. If you must claim that one model beats another, report the paired
+difference with its corrected interval, over several seeds — not a single number with three decimals.
 """)
 
 nb.md(r"""
@@ -864,7 +1124,6 @@ ns1 = run(SOL_1, r"""
 a = binom_two_sided_p(60, 100)
 b = normal_approx_p(60, 100, continuity=True)
 c = normal_approx_p(60, 100, continuity=False)
-d = binom_two_sided_p(27, 40, 0.5)
 e = binom_two_sided_p(14, 30, 0.3)
 """)
 ex.add(
@@ -915,6 +1174,11 @@ try:
 except Exception:
     got = None
 check_close('normal approximation without correction, 60/100', got, 2 * stats.norm.sf(2.0), tol=1e-6)
+try:
+    got = normal_approx_p(50, 100)
+except Exception:
+    got = None
+check_close('continuity correction clips at 0: 50/100 gives p = 1', got, 1.0)
 try:
     got = binom_two_sided_p(14, 30, 0.3)
 except Exception:
@@ -1097,7 +1361,7 @@ following statements say whether it is correct, and if not, what the correct sta
 
 1. "There is a 3% probability that the new page is no better than the old one."
 2. "There is a 97% probability that the new page is better."
-3. "If the new page were truly no better, a lift at least this large (in either direction) would occur in about 3% of such experiments."
+3. "If the new page truly made no difference, a lift at least this large (in either direction) would occur in about 3% of such experiments."
 4. "If we repeated the experiment, it would come out significant 97% of the time."
 5. "The result is more trustworthy than a competitor's $p = 0.04$ result from an experiment ten times larger."
 """,
@@ -1107,7 +1371,8 @@ computed under $H_0$. Statement 1 reverses the conditioning: $P(\text{data} \mid
 the latter needs a prior over hypotheses and Bayes' theorem (with 10% of ideas being real improvements and
 power 0.8, a significant result is a false positive about a third of the time). Statement 2 is the same error
 for $H_1$. Statement 4 confuses the p-value with power: the replication probability depends on the true
-effect and the sample size and, for an effect just large enough to give $p = 0.03$, is only around 50%.
+effect and the sample size and, for a true effect equal to the one that gave $p = 0.03$ ($z = 2.17$), is only
+about 58%.
 Statement 5 is wrong twice: p-values from different sample sizes are not comparable as "trustworthiness",
 and the larger experiment's $p = 0.04$ corresponds to a much *smaller* estimated effect with a much
 *narrower* interval — compare effect sizes and confidence intervals, not p-values.
@@ -1181,7 +1446,7 @@ check('constant differences give an infinite (or huge) t', ok)
     explanation_md=r"""
 The paired test is a one-sample test on the differences: $\bar d = 1.317$, $s_d = 0.763$,
 $t = 1.317/(0.763/\sqrt 6) = 4.23$ on 5 degrees of freedom, $p = 0.008$. The unpaired Welch test on the same
-twelve numbers gives $p \approx 0.40$ because the between-machine spread (about 2.9 minutes) enters the
+twelve numbers gives $p \approx 0.40$ because the between-machine spread (about 2 to 3 minutes) enters the
 standard error, whereas the differences remove it; the before/after correlation is $0.98$. When every
 difference is identical, $s_d = 0$ and $t = \pm\infty$ — a degenerate but correct answer (guard the division
 so NumPy does not warn). The classic bug is to compute `before.std() - after.std()` or to pool variances
@@ -1354,6 +1619,18 @@ try:
 except Exception:
     p_same = None
 check('a sample against itself: p = 1', (p_same is not None) and abs(p_same - 1.0) < 1e-12)
+try:
+    got = perm_test_mc(np.arange(10.) + 100, np.arange(10.), 99, np.random.default_rng(3))
+except Exception:
+    got = None
+check_close('+1 rule: 99 shuffles of fully separated groups give p = 1/100', got, 0.01,
+            hint='add 1 to the numerator and to the denominator')
+try:
+    got = perm_test_mc(np.array([0., 0, 1, 1]), np.array([0., 0, 1, 1]), 500, np.random.default_rng(4))
+except Exception:
+    got = None
+check_close('ties count as extreme: identical groups with repeated values give p = 1', got, 1.0,
+            hint='count |T*| >= |t_obs|, not > (allow a tolerance such as >= obs - 1e-12)')
 """,
     explanation_md=r"""
 Under the null the group labels are exchangeable, so every assignment of the pooled values to the two
@@ -1363,8 +1640,8 @@ only the observed one and its mirror image reach $|{\bar a} - {\bar b}| = 3.67$,
 separated 4-vs-4 case the two extreme splits out of $\binom 84 = 70$ give $2/70$. The Monte Carlo version
 estimates the same fraction with random permutations; adding 1 to numerator and denominator counts the
 observed arrangement itself and guarantees the estimated p-value is never 0 and remains valid. Comparing a
-sample against itself gives $p = 1$ because every permutation ties the observed statistic of exactly 0.
-The reference value for the skewed spend data is close to Welch's p-value here (40 per arm is enough for
+sample against itself gives $p = 1$ because the observed statistic is exactly 0 and every shuffled $|T^*|$ is at
+least that. The reference value for the skewed spend data is close to Welch's p-value here (40 per arm is enough for
 the CLT), but the permutation test would stay exact at 8 per arm, where the t-test would not.
 """,
 )
@@ -1452,6 +1729,10 @@ check_hash('Benjamini-Hochberg rejections at q = 0.10 (indices)', _idx(bh_reject
 check('Bonferroni is a subset of Holm, Holm a subset of BH', (rb is not None and rh is not None and rq is not None) and set(rb) <= set(rh) <= set(rq))
 check('nothing rejected when all p-values are 0.5', _idx(bh_reject, np.full(5, 0.5)) == [] and _idx(holm_reject, np.full(5, 0.5)) == [])
 check('everything rejected when all p-values are tiny', _idx(bonferroni_reject, np.full(6, 1e-6)) == [0, 1, 2, 3, 4, 5])
+check('Holm stops at the first failure', _idx(holm_reject, np.array([0.02, 0.03, 0.04])) == [],
+      hint='0.02 > 0.05/3, so nothing may be rejected')
+check('BH is step-up: 0.011 is swept in', _idx(bh_reject, np.array([0.001, 0.011, 0.012, 0.019, 0.040, 0.045, 0.200, 0.350, 0.600, 0.900])) == [0, 1, 2, 3],
+      hint='find the LARGEST k with p_(k) <= kq/m')
 """,
     explanation_md=r"""
 Sorted, the twelve p-values are $0.001, 0.004, 0.011, 0.012, 0.019, 0.030, 0.040, 0.045, 0.2, \dots$.
@@ -1459,10 +1740,13 @@ Bonferroni's threshold is $0.05/12 = 0.0042$, so it rejects the two smallest. Ho
 $0.05/12$, $0.004$ with $0.05/11 = 0.0045$, then $0.011$ with $0.05/10 = 0.005$ — a failure, so it stops with the
 same two rejections (Holm never rejects less than Bonferroni and often more). BH thresholds are
 $0.05\,i/12$: $0.0042, 0.0083, 0.0125, 0.0167, 0.0208, 0.025, 0.029, 0.033, \dots$; the largest $i$ with
-$p_{(i)} \le 0.05\,i/12$ is $i = 5$ ($0.019 \le 0.0208$), so BH rejects the five smallest *including* $0.011$ and
-$0.012$, which exceeded their own thresholds — the step-up rule looks for the last success, not the first
-failure. At $q = 0.10$ the thresholds double and more hypotheses pass. The standard bug is forgetting to
-undo the sort: compute decisions on `p[order]` and write them back with `reject[order[:k]] = True`.
+$p_{(i)} \le 0.05\,i/12$ is $i = 5$ ($0.019 \le 0.0208$), so BH rejects the five smallest, including $0.011$ and
+$0.012$, which fail Holm's much stricter thresholds ($0.005$, $0.0056$) but pass BH's ($0.0125$, $0.0167$). On this
+list the first failure also ends the run of successes, so the step-up rule changes nothing; on the lesson's ten
+p-values it does, where $0.011$ exceeds $0.010$ and is rejected anyway. The last two checks use short lists on which
+the step-down and step-up rules do matter. At $q = 0.10$ the thresholds double and more hypotheses pass. The
+standard bug is forgetting to undo the sort: compute decisions on `p[order]` and write them back with
+`reject[order[:k]] = True`.
 """,
 )
 
@@ -1471,9 +1755,9 @@ ex.add_conceptual(
     title="Why randomise, and what blocking adds", difficulty=2,
     prompt_md=r"""
 A streaming service lets users opt in to a redesigned home screen. After a month, opted-in users watch
-on average 38 minutes per day and the others 52 minutes, so the product team concludes the redesign
-*reduces* watch time. You notice that 80% of the opted-in users are on mobile, where average watch time is
-30 minutes, while 80% of the others are on TVs, where it is 55 minutes; within each device type the
+on average 38 minutes per day and the others 50 minutes, so the product team concludes the redesign
+*reduces* watch time. You notice that 80% of the opted-in users are on mobile while 80% of the others are on
+TVs. Users who did not opt in average 30 minutes on mobile and 55 on TV, and within each device type the
 opted-in users actually watch about 3 minutes *more*.
 
 1. Name the phenomenon and explain in two or three sentences why the overall comparison is misleading.
@@ -1568,9 +1852,10 @@ except Exception:
 check('alpha = 0.01 with five looks: rate between 0.02 and 0.05', (f_strict is not None) and 0.02 < f_strict < 0.05)
 """,
     explanation_md=r"""
-The cumulative z-statistics form a correlated sequence (each look reuses all earlier data), and the
-probability that a random walk *ever* leaves $\pm 1.96$ grows with the number of chances: about 0.05, 0.14
-and 0.25 for 1, 5 and 20 looks, matching the classical table of Armitage, McPherson and Rowe. Pocock's
+The cumulative z-statistics form a correlated sequence, because each look reuses all earlier data: the running
+sum is a random walk and $Z$ is that walk rescaled. The probability that it *ever* leaves $\pm 1.96$ grows with the
+number of chances, about 0.05, 0.14 and 0.25 for 1, 5 and 20 looks, matching the classical table of Armitage,
+McPherson and Rowe. Pocock's
 constant boundary 2.413 for five looks brings the overall rate back to 0.05, at the price that even the
 final analysis needs $|Z| > 2.41$. Implementation pitfalls: using the *difference of means* with the
 standard error of a single arm (forgetting the factor $\sqrt 2$), or testing only at the final look (which
@@ -1585,7 +1870,7 @@ def mcnemar(y_true, pred_a, pred_b):
     right_b = np.asarray(pred_b) == np.asarray(y_true)
     b = int(np.sum(right_a & ~right_b))
     c = int(np.sum(~right_a & right_b))
-    chi2_cc = (abs(b - c) - 1)**2 / (b + c)
+    chi2_cc = max(abs(b - c) - 1, 0)**2 / (b + c)
     p_exact = float(stats.binomtest(min(b, c), b + c, 0.5).pvalue)
     return b, c, float(chi2_cc), p_exact
 
@@ -1618,8 +1903,8 @@ Two ways to compare classifiers honestly.
 
 1. `mcnemar(y_true, pred_a, pred_b)` → `(b, c, chi2_cc, p_exact)` for two classifiers evaluated on the **same**
    test set: `b` = number of examples A gets right and B wrong, `c` = the reverse (both ints),
-   `chi2_cc` $= (|b - c| - 1)^2/(b + c)$ (the continuity-corrected statistic), and `p_exact` = the exact
-   two-sided p-value of `stats.binomtest(min(b, c), b + c, 0.5)`.
+   `chi2_cc` $= \max(|b - c| - 1,\ 0)^2/(b + c)$ (the continuity-corrected statistic, with the correction clipped so
+   that $b = c$ gives 0), and `p_exact` = the exact two-sided p-value of `stats.binomtest(min(b, c), b + c, 0.5)`.
 2. `nadeau_bengio_t(diffs, n_test, n_train)` → `(t, p)`: for $J$ paired per-fold score differences $d_j$,
    $t = \bar d \big/ \sqrt{(1/J + n_{\text{test}}/n_{\text{train}})\,s_d^2}$ with $s_d^2$ the sample variance
    (`ddof=1`), and $p = 2P(t_{J-1} \ge |t|)$.
@@ -1653,6 +1938,11 @@ except Exception:
     got = None
 check_close('tiny example: b = 1, c = 2, chi2 = 0', (got[:3] if got is not None else None), (1, 2, 0.0))
 try:
+    got = mcnemar(np.array([0, 1, 0, 1]), np.array([0, 1, 1, 0]), np.array([1, 0, 0, 1]))
+except Exception:
+    got = None
+check_close('equal discordant counts: b = c = 2, chi2 = 0 (clipped), exact p = 1', got, (2, 2, 0.0, 1.0))
+try:
     t_nb, p_nb = nadeau_bengio_t(cv_diffs, 100, 400)
 except Exception:
     t_nb, p_nb = None, None
@@ -1668,11 +1958,12 @@ check('the correction shrinks |t| by a factor between 3 and 4 here', (t_nb is no
     explanation_md=r"""
 McNemar ignores the examples both classifiers get right or wrong — they carry no information about the
 *difference* — and asks whether the discordant ones split evenly: under $H_0$, $b \sim \text{Binomial}(b + c, \tfrac12)$,
-so the exact p-value is a binomial test and $(|b - c| - 1)^2/(b + c)$ is its chi-square approximation. In the
+so the exact p-value is a binomial test and $\max(|b - c| - 1, 0)^2/(b + c)$ is its chi-square approximation. In the
 tiny example $b = 1$, $c = 2$ and $(|1 - 2| - 1)^2 = 0$. For cross-validation, the $J$ fold differences are
 correlated because training sets overlap; Nadeau and Bengio approximate that correlation by
-$\rho \approx n_{\text{test}}/n_{\text{train}}$ and inflate the variance from $s_d^2/J$ to
-$(1/J + \rho)\,s_d^2$ — with $J = 50$ and $\rho = 1/4$ a factor $13.5$, so $|t|$ shrinks by about $3.7$. Setting
+$\rho \approx n_{\text{test}}/n$ (with $n = n_{\text{test}} + n_{\text{train}}$), which inflates the variance from
+$s_d^2/J$ to $(1/J + \rho/(1 - \rho))\,s_d^2 = (1/J + n_{\text{test}}/n_{\text{train}})\,s_d^2$ — with $J = 50$ and
+$n_{\text{test}}/n_{\text{train}} = 1/4$ a factor $13.5$, so $|t|$ shrinks by about $3.7$. Setting
 $n_{\text{test}} = 0$ recovers the naive paired t-test, which is the comparison the last check makes. The
 common mistake is to apply the correction factor to the standard error rather than to the variance, which
 under-corrects by a square root.
@@ -1743,10 +2034,11 @@ print(f"peeking daily under the true 10% lift: stopped before day 14 in {early.m
 fig, ax = plt.subplots(figsize=(8, 4))
 for i in range(6):
     ax.plot(np.arange(1, days + 1), zd0[i], marker=".", lw=1)
-ax.axhline(1.96, color="C3", ls="--"); ax.axhline(-1.96, color="C3", ls="--")
+ax.axhline(1.96, color="C3", ls="--", label="+/-1.96"); ax.axhline(-1.96, color="C3", ls="--")
+ax.set_xticks(range(1, days + 1))
 ax.set_xlabel("day of the experiment"); ax.set_ylabel("running z-statistic")
-ax.set_title("Six null experiments watched daily: random walks that sometimes cross +/-1.96")
-plt.show()
+ax.set_title("Six null experiments watched daily: the running z-statistic sometimes crosses +/-1.96")
+ax.legend(); plt.show()
 """
 ex.add_project(
     title="Mini-project: design and analyse an A/B test end to end",
@@ -1785,8 +2077,9 @@ so a 14-day test. The single run with `default_rng(2024)` is instructive: the tr
 observed lift is only $0.21$ percentage points with $z = 1.20$, $p = 0.23$ — a type II error, which a design with
 80% power commits one time in five. Read the interval, not the verdict: $[-0.14,\ +0.57]$ points still contains
 the $0.5$-point effect the test was built to detect, so the honest conclusion is "inconclusive", not "no
-effect", and a longer run is justified. (Re-run with another seed and most runs give $z$ around 2.5 to 3 and an
-interval like $[0.1, 0.9]$ points; even then the *relative* lift is pinned down only to within about
+effect", and a longer run is justified. (Across other seeds the median run gives $z \approx 2.8$, half of all runs
+fall between 2.1 and 3.5, and the interval is about $\pm 0.35$ points wide, for example $[0.15, 0.85]$; even then
+the *relative* lift is pinned down only to within about
 $\pm 7$ percentage points of relative lift — 80% power is power to detect, not to measure precisely.) The
 validation simulation returns power close to $0.80$ and a false-positive rate close to $0.05$. Daily peeking
 under the null declares significance at some point in roughly 22% of experiments (14 looks), typically

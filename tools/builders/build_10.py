@@ -5,7 +5,7 @@ build_10.py — generates lesson.ipynb, exercises.ipynb and solutions.ipynb for
 
 Run from the repository root:
 
-    python3 _authoring/builders/build_10.py
+    python3 tools/builders/build_10.py
     python3 tools/run_notebooks.py part-4-statistics/10-estimation-and-sampling
 
 All hidden answers are computed here by *executing* the reference solutions and hashing
@@ -81,7 +81,27 @@ with_repl = np.array([population[[i, j]].mean() for i in range(N) for j in range
 print(f"with replacement:            = {with_repl.var():.3f}   = sigma^2/n = {sigma2/n:.3f}")
 """)
 
+nb.code(r"""
+# population and both sampling distributions, drawn from the enumeration above (no randomness)
+panels = [(population, f"population: 5 workers (sd {np.sqrt(sigma2):.2f})", "orders per hour"),
+          (means, f"10 sample means, no replacement (sd {means.std():.2f})", "sample mean of n = 2"),
+          (with_repl, f"25 sample means, with replacement (sd {with_repl.std():.2f})", "sample mean of n = 2")]
+fig, axes = plt.subplots(1, 3, figsize=(10, 3.4), sharey=True)
+for ax, (vals, title, xlabel) in zip(axes, panels):
+    v, c = np.unique(vals, return_counts=True)
+    ax.bar(v, c / c.sum(), width=0.35)
+    ax.axvline(mu, color="k", ls="--", label=f"population mean = {mu:.0f}")
+    ax.set_xlim(1, 10); ax.set_ylim(0, 0.5)
+    ax.set_xlabel(xlabel); ax.set_title(title, fontsize=9); ax.legend(fontsize=8, loc="upper right")
+axes[0].set_ylabel("probability")
+plt.tight_layout(); plt.show()
+""")
+
 nb.md(r"""
+**Notice that** the ten sample means (middle) pile up around $\mu = 5$ with standard deviation 1.45, tighter
+than the population's 2.37, and that the with-replacement distribution (right) is slightly wider (1.67) and
+reaches the extremes 2 and 9, which a sample without replacement can never produce.
+
 The ten means **are** the sampling distribution: a histogram of them is what you would get by repeating
 the sampling forever. Sampling without replacement is slightly *more* precise than with replacement
 (variance 2.1 versus 2.8), because a sample cannot accidentally pick the same worker twice.
@@ -108,8 +128,8 @@ true_mean = 0.7 * 2.0 + 0.3 * 20.0
 expected_biased = (0.7 * 0.10 * 2.0 + 0.3 * 0.40 * 20.0) / (0.7 * 0.10 + 0.3 * 0.40)
 sizes = np.array([200, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 50_000, 100_000, 200_000])
 reps = 30
-biased = np.array([[mail_survey(m, rng)[0] for _ in range(reps)] for m in sizes])
-random_ = np.array([[mail_survey(m, rng)[1] for _ in range(reps)] for m in sizes])
+pairs = np.array([[mail_survey(m, rng) for _ in range(reps)] for m in sizes])   # shape (sizes, reps, 2)
+biased, random_ = pairs[..., 0], pairs[..., 1]                 # both estimates come from the same mailing
 
 plt.errorbar(sizes, biased.mean(1), yerr=biased.std(1), fmt="o-", capsize=3, label="respondents (self-selected)")
 plt.errorbar(sizes, random_.mean(1), yerr=random_.std(1), fmt="s-", capsize=3, label="random sample of the same size")
@@ -214,11 +234,11 @@ ax1.set_xlabel("latency (ms)"); ax1.set_ylabel("density"); ax1.set_title("200 la
 xs = np.sort(latency); ecdf = np.arange(1, n_lat + 1) / n_lat
 ax2.step(xs, ecdf, where="post", label="ECDF")
 ax2.plot(grid, stats.lognorm.cdf(grid, s=0.6, scale=150), "k--", label="true CDF")
-ax2.axhline(0.5, color="C2", ls=":"); ax2.axhline(0.95, color="C1", ls=":")
+ax2.axhline(0.5, color="C2", ls=":", label="F = 0.5 (median)"); ax2.axhline(0.95, color="C1", ls=":", label="F = 0.95 (p95)")
 ax2.set_xlabel("latency (ms)"); ax2.set_ylabel("F(x)"); ax2.set_title("Empirical CDF vs the truth"); ax2.legend(fontsize=8)
 plt.tight_layout(); plt.show()
 
-print(f"mean {latency.mean():.1f}   median {np.median(latency):.1f}   p95 {np.quantile(latency, 0.95):.1f}   sd {latency.std(ddof=1):.1f}   (true median 150, true mean {150*np.exp(0.18):.1f})")
+print(f"mean {latency.mean():.1f}   median {np.median(latency):.1f}   p95 {np.quantile(latency, 0.95):.1f}   sd {latency.std(ddof=1):.1f}   (true median 150, true mean {150*np.exp(0.18):.1f}, true p95 {150*np.exp(0.6*stats.norm.ppf(0.95)):.1f})")
 """)
 
 nb.code(r"""
@@ -232,10 +252,48 @@ nb.md(r"""
 One corrupted value wrecks the mean and the standard deviation (breakdown point 0). The 10%-trimmed mean
 trims $\lfloor 0.1 \times 9 \rfloor = 0$ values per side, so at $n = 9$ it *is* the mean and fails just as
 fast; the 20%-trimmed mean trims one value per side and survives exactly one corrupted point (breakdown
-point $\alpha$). The median and the MAD survive four corrupted values out of nine and break at five —
-their 50% breakdown point. The ECDF needs no bins or bandwidth and converges uniformly to the true CDF;
+point $1/9$ here and $\alpha$ in the limit). The median and the MAD survive four corrupted values out of nine and break at five —
+their breakdown point, $4/9$ here and 50% in the limit. The ECDF needs no bins or bandwidth and converges uniformly to the true CDF;
 the KDE depends on $h$ (set it to 5 or 60 in `kde` to see too spiky and too smooth), the histogram on
 the bin edges.
+
+The table counts how many corrupted values each summary survives. The next picture shows what a single
+bad value does on its way out: we keep the nine clean response times and slide a tenth from 100 ms to 10,000 ms.
+""")
+
+nb.code(r"""
+moving = np.logspace(2, 4, 200)                                 # the tenth observation
+curves = {name: [] for name in ("mean", "10%-trimmed", "20%-trimmed", "median", "sd", "scaled MAD")}
+for x in moving:
+    v = np.append(clean, x)                                     # ten values: the 10%-trimmed mean now trims one per side
+    curves["mean"].append(v.mean()); curves["10%-trimmed"].append(trimmed_mean(v, 0.1))
+    curves["20%-trimmed"].append(trimmed_mean(v, 0.2)); curves["median"].append(my_median(v))
+    curves["sd"].append(v.std(ddof=1)); curves["scaled MAD"].append(1.4826 * mad(v))
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.6))
+for name, style, lw in [("median", "C0-", 3), ("mean", "C3-", 1.5), ("10%-trimmed", "C1--", 1.5), ("20%-trimmed", "C2-.", 1.5)]:
+    ax1.plot(moving, curves[name], style, lw=lw, label=name)
+ax1.axvline(2400, color="grey", ls=":", label="the cold-cache value, 2,400 ms")
+ax1.set_xscale("log"); ax1.set_ylim(100, 400)
+ax1.set_xlabel("value of the tenth observation (ms, log scale)"); ax1.set_ylabel("estimate of the centre (ms)")
+ax1.set_title("One moving observation: location estimates"); ax1.legend(fontsize=8, loc="upper left")
+ax2.loglog(moving, curves["sd"], "C3-", label="standard deviation")
+ax2.loglog(moving, curves["scaled MAD"], "C0-", label="1.4826 * MAD")
+ax2.axvline(2400, color="grey", ls=":", label="the cold-cache value, 2,400 ms")
+ax2.set_xlabel("value of the tenth observation (ms, log scale)"); ax2.set_ylabel("estimate of the spread (ms, log scale)")
+ax2.set_title("One moving observation: spread estimates"); ax2.legend(fontsize=8, loc="upper left")
+plt.tight_layout(); plt.show()
+print(f"at 10,000 ms: mean {curves['mean'][-1]:.1f}, 10%-trimmed {curves['10%-trimmed'][-1]:.1f}, 20%-trimmed {curves['20%-trimmed'][-1]:.1f}, "
+      f"median {curves['median'][-1]:.1f}, sd {curves['sd'][-1]:.1f}, scaled MAD {curves['scaled MAD'][-1]:.1f}")
+""")
+
+nb.md(r"""
+**Notice that** the mean and the standard deviation keep following the moving point without limit: every extra
+millisecond moves the mean by $1/10$ ms (its curve bends only because the $x$-axis is logarithmic) and, once the
+point is far out, the standard deviation by about $1/\sqrt{10}$ ms (the straight line on the log–log axes). The
+median, the trimmed means and the MAD stop responding once the point has passed the rest of the data: a
+summary that survives one corrupted value gives that value only *bounded influence* on the estimate. (With ten values the 10%-trimmed mean now trims
+one per side, so it survives the single point it could not survive in the table above with nine.)
 """)
 
 # ---------------------------------------------------------------- 3. estimators
@@ -245,7 +303,8 @@ nb.md(r"""
 For $n = 25$ observations we compare the sample mean and the sample median as estimators of the centre,
 for a Normal and for a (heavy-tailed) Laplace population, by drawing 20,000 samples of each. The guide
 predicts $\operatorname{Var}(\text{median}) / \operatorname{Var}(\bar X) \approx \pi/2 \approx 1.57$ for
-normal data and $\approx 1/2$ for Laplace data.
+normal data and $1/2$ for Laplace data *in the limit* (at $n = 25$ expect about $2/3$: the median's
+variance approaches $b^2/n$ only slowly).
 """)
 
 nb.code(r"""
@@ -261,7 +320,7 @@ for ax, (name, (X, var_pop)) in zip(axes, populations.items()):
     print(f"{name:14s} Var(mean) {xbar.var():.4f} (theory sigma^2/n = {var_pop/n:.4f})   Var(median) {med.var():.4f}   "
           f"ratio median/mean = {med.var()/xbar.var():.2f}   bias of mean {xbar.mean():+.4f}, of median {med.mean():+.4f}")
 axes[0].set_ylabel("density"); plt.tight_layout(); plt.show()
-print(f"theory: pi/2 = {np.pi/2:.2f} for normal data; the median is about twice as efficient for Laplace data")
+print(f"theory: pi/2 = {np.pi/2:.2f} for normal data; 1/2 for Laplace data asymptotically (about 0.67 at n = 25)")
 """)
 
 nb.md(r"""
@@ -288,7 +347,28 @@ for name, c in [("n-1", 1 / (n - 1)), ("n", 1 / n), ("n+1", 1 / (n + 1))]:
 print("\nunbiased (n-1) has the largest MSE; shrinking towards 0 (n+1) trades a little bias for less variance")
 """)
 
+nb.code(r"""
+# the three rows of the table are three points on a curve: MSE as a function of the divisor
+divs = np.linspace(6, 16, 200); cs = 1 / divs
+bias2_curve = ((n - 1) * cs - 1) ** 2; var_curve = 2 * (n - 1) * cs ** 2
+plt.figure(figsize=(7, 3.8))
+plt.plot(divs, bias2_curve, "C1--", label=r"bias$^2 = (9c - 1)^2$")
+plt.plot(divs, var_curve, "C0--", label=r"variance $= 18c^2$")
+plt.plot(divs, bias2_curve + var_curve, "k-", lw=2, label=r"MSE = bias$^2$ + variance")
+for name, d, (tx, ty) in [("n-1", 9, (9.2, 0.31)), ("n", 10, (10.0, 0.27)), ("n+1", 11, (11.7, 0.25))]:
+    mse_sim = ((ss / d - 1) ** 2).mean()
+    plt.plot(d, mse_sim, "o", color="C3", ms=7)
+    plt.annotate(f"divisor {name}", (d, mse_sim), xytext=(tx, ty), ha="center", fontsize=8, arrowprops=dict(arrowstyle="-", color="grey"))
+plt.axvline(11, color="grey", ls=":", lw=1)
+plt.ylim(0, 0.6); plt.xlabel("divisor 1/c of the sum of squared deviations"); plt.ylabel(r"value ($\sigma^2 = 1$, $n = 10$)")
+plt.title("MSE of the estimators c * SS: minimum at divisor n + 1"); plt.legend(fontsize=8); plt.show()
+""")
+
 nb.md(r"""
+**Notice that** the variance curve falls as the divisor grows while the squared bias rises from zero at $n - 1$;
+their sum is lowest at $n + 1$ (where the derivative of $18c^2 + (9c - 1)^2$ vanishes, $c = 1/11$), and the
+three simulated points (red) sit on the theoretical curve.
+
 ### Shrinkage in many dimensions: the James–Stein estimator
 
 Observe one noisy vector $X \sim \mathcal N(\theta, I_p)$ with $p = 10$. The obvious estimate is
@@ -314,8 +394,8 @@ for r in norms:
 plt.plot(norms, mse_mle, "o-", label=r"$\hat\theta = X$ (unbiased), MSE = p")
 plt.plot(norms, mse_js, "s-", label="James-Stein")
 plt.plot(norms, mse_js_plus, "^--", label="positive-part James-Stein")
-plt.xlabel(r"$\|\theta\|$ (distance of the truth from the shrinkage target)"); plt.ylabel("total MSE over the 10 coordinates")
-plt.title("A biased estimator that beats the unbiased one everywhere (p = 10)"); plt.legend(); plt.show()
+plt.xlabel(r"$\|\theta\|$ (distance of the truth from the shrinkage target)"); plt.ylabel(f"total MSE over p = {p} coordinates")
+plt.title(f"A biased estimator that beats the unbiased one everywhere (p = {p})" if p >= 3 else f"James-Stein without its theorem (p = {p})"); plt.legend(); plt.show()
 for r, a, b in zip(norms, mse_mle, mse_js):
     print(f"||theta|| = {r:4.1f}:  MSE(X) = {a:6.2f}   MSE(JS) = {b:5.2f}")
 """)
@@ -326,7 +406,8 @@ but never becomes a loss. This is the mathematical ancestor of ridge regression 
 ([Module 13](../../part-5-learning-theory/13-linear-models-and-regularization/README.md)): accept a
 little bias, remove a lot of variance.
 
-**Try it yourself:** set `p = 2` (where the theorem no longer applies) — does James–Stein still win?
+**Try it yourself:** set `p = 1` (where the theorem no longer applies: the factor becomes $1 + 1/X^2$ and
+pushes the estimate away from zero) — does James–Stein still win? With `p = 2` it reduces to $X$ exactly, a tie.
 """)
 
 # ---------------------------------------------------------------- 4. standard error
@@ -346,12 +427,12 @@ sd_mean = np.array([rng.exponential(1.0, size=(reps, m)).mean(1).std() for m in 
 sd_prop = np.array([(rng.random(size=(reps, m)) < p_true).mean(1).std() for m in ns])
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.6))
-grid = np.linspace(0, 3, 300)
+grid = np.linspace(0, 3.5, 300)
 for m, c in [(2, "C0"), (30, "C1")]:
     xb = rng.exponential(1.0, size=(reps, m)).mean(1)
     ax1.hist(xb, bins=60, density=True, alpha=0.5, color=c, label=f"mean of n = {m} Exp(1) draws")
-    ax1.plot(grid, stats.norm.pdf(grid, 1, 1 / np.sqrt(m)), color=c, lw=1.5)
-ax1.set_xlabel("sample mean"); ax1.set_ylabel("density"); ax1.set_title("CLT: the mean of a skewed population"); ax1.legend(fontsize=8)
+    ax1.plot(grid, stats.norm.pdf(grid, 1, 1 / np.sqrt(m)), color=c, lw=1.5, label=f"normal N(1, 1/{m})")
+ax1.set_xlim(0, 3.5); ax1.set_xlabel("sample mean"); ax1.set_ylabel("density"); ax1.set_title("CLT: the mean of a skewed population"); ax1.legend(fontsize=8)
 ax2.loglog(ns, sd_mean, "o", label="observed sd of the mean (Exp(1))")
 ax2.loglog(ns, 1 / np.sqrt(ns), "C0-", label=r"$\sigma/\sqrt{n}$, $\sigma = 1$")
 ax2.loglog(ns, sd_prop, "s", color="C1", label=f"observed sd of a proportion (p = {p_true})")
@@ -383,7 +464,28 @@ Even for $n = 2$ draws from an exponential the formula $\sigma/\sqrt n$ is exact
 that needs the CLT, and by $n = 30$ the histogram is close to the normal curve. In the right panel the
 points sit on the theory lines across three decades of $n$: a straight line of slope $-1/2$ on log–log
 axes. Keep the two numbers at the end apart: the standard deviation (87 ms) describes requests, the
-standard error (6 ms) describes our knowledge of the mean.
+standard error (6 ms) describes our knowledge of the mean. The same 200 latencies, taken one at a time,
+show the difference.
+""")
+
+nb.code(r"""
+ks = np.arange(2, n_lat + 1)
+run_mean = np.cumsum(latency)[1:] / ks
+run_sd = np.array([latency[:k].std(ddof=1) for k in ks])
+run_se = run_sd / np.sqrt(ks)
+plt.figure(figsize=(7, 3.8))
+plt.plot(np.arange(1, n_lat + 1), latency, ".", color="grey", ms=4, alpha=0.5, label="individual latencies")
+plt.fill_between(ks, run_mean - run_sd, run_mean + run_sd, color="C1", alpha=0.15, label="mean +/- s (standard deviation)")
+plt.fill_between(ks, run_mean - 1.96 * run_se, run_mean + 1.96 * run_se, color="C0", alpha=0.35, label="mean +/- 1.96 s/sqrt(n) (standard error)")
+plt.plot(ks, run_mean, "C0-", label="running mean of the first n")
+plt.ylim(0, 680); plt.xlabel("number of requests n"); plt.ylabel("latency (ms)")
+plt.title("Standard deviation stays, standard error shrinks"); plt.legend(fontsize=7, ncol=2, loc="upper right"); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the grey points are as spread out at $n = 200$ as at $n = 20$ and the orange band ($\pm s$) does
+not narrow, while the blue band ($\pm 1.96\,s/\sqrt n$) shrinks like $1/\sqrt n$: the standard deviation
+describes requests, the standard error describes the mean.
 """)
 
 # ---------------------------------------------------------------- 5. confidence intervals
@@ -425,11 +527,45 @@ plt.legend(); plt.show()
 
 nb.md(r"""
 The $z$-interval with known $\sigma$ and the $t$-interval both hit 95% (within Monte Carlo error); the
-$z$-with-$s$ interval is about 30% narrower than the $t$-interval and misses the truth about 12–13% of
+$z$-with-$s$ interval is about 30% narrower than the $t$-interval and misses the truth about 12% of
 the time. Each red segment is an interval that was computed correctly and is nevertheless wrong — the
 95% belongs to the procedure, not to any one of them.
 
 **Try it yourself:** change `n` to 30. The three procedures should become nearly indistinguishable — why?
+Below, the same experiment is repeated across $n$, next to the exact formula for the $z$-with-$s$ coverage.
+""")
+
+nb.code(r"""
+ns_grid = np.arange(2, 61)
+exact_zs = 2 * stats.t.cdf(z, df=ns_grid - 1) - 1              # exact coverage of z with s, at every n
+sim_rng = np.random.default_rng(11)
+ns_sim = np.array([2, 3, 4, 5, 7, 10, 15, 20, 30, 45, 60])
+cov_known, cov_t, cov_zs = [], [], []
+for m in ns_sim:
+    Xs = sim_rng.normal(mu, sigma, size=(reps, m))
+    xb_m, s_m = Xs.mean(1), Xs.std(1, ddof=1)
+    t_m = stats.t.ppf(0.975, df=m - 1)
+    cov_known.append((np.abs(xb_m - mu) <= z * sigma / np.sqrt(m)).mean())
+    cov_t.append((np.abs(xb_m - mu) <= t_m * s_m / np.sqrt(m)).mean())
+    cov_zs.append((np.abs(xb_m - mu) <= z * s_m / np.sqrt(m)).mean())
+
+plt.figure(figsize=(7, 3.8))
+plt.plot(ns_grid, exact_zs, "C3-", label=r"z with s: exact, $2F_{t_{n-1}}(1.96) - 1$")
+plt.plot(ns_sim, cov_zs, "o", color="C3", ms=5, label="z with s: simulated")
+plt.plot(ns_sim, cov_t, "s", color="C0", ms=5, label="t with s: simulated")
+plt.plot(ns_sim, cov_known, "^", color="C2", ms=5, label="z with known sigma: simulated")
+plt.axhline(0.95, color="k", ls="--", lw=1, label="nominal 95%")
+plt.annotate(f"n = 5: {exact_zs[3]:.0%}", (5, exact_zs[3]), xytext=(14, -14), textcoords="offset points", fontsize=8,
+             arrowprops=dict(arrowstyle="-", color="grey"))
+plt.text(9, 0.76, "5 seeds in a paper: use $t_4 = 2.78$, not 1.96", fontsize=8)
+plt.ylim(0.65, 1.0); plt.xlabel("sample size n"); plt.ylabel("coverage of the nominal 95% interval")
+plt.title("Coverage of three interval procedures as n grows"); plt.legend(fontsize=7, loc="lower right"); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the gap closes slowly: the $z$-with-$s$ interval is a 70% interval at $n = 2$, 88% at $n = 5$, 92% at
+$n = 10$ and still 94% at $n = 30$, while the $t$-interval holds 95% at every $n$ — the $t$ multiplier is exactly
+the correction for having estimated $s$.
 
 ### Wald vs Wilson for a proportion: exact coverage
 
@@ -460,7 +596,7 @@ fig, axes = plt.subplots(1, 2, figsize=(10, 3.6), sharey=True)
 for ax, p in zip(axes, (0.05, 0.5)):
     ax.plot(ns, [exact_coverage(wald_ci, m, p) for m in ns], label="Wald", lw=1)
     ax.plot(ns, [exact_coverage(wilson_ci, m, p) for m in ns], label="Wilson", lw=1)
-    ax.axhline(0.95, color="k", ls="--", lw=1); ax.set_ylim(0.6, 1.0)
+    ax.axhline(0.95, color="k", ls="--", lw=1, label="nominal 95%"); ax.set_ylim(0.35, 1.0)
     ax.set_xlabel("n"); ax.set_title(f"exact coverage of nominal 95% intervals, p = {p}"); ax.legend()
 axes[0].set_ylabel("coverage probability"); plt.tight_layout(); plt.show()
 
@@ -478,8 +614,8 @@ print(f"rule of three for 0/20: 3/n = {3/20:.3f}   Wilson upper limit z^2/(n+z^2
 nb.md(r"""
 For $p = 0.05$ the Wald interval's coverage oscillates far below 95% — at $n = 20$ it is 64%, and it
 does not settle near the nominal level until $n$ is around 1,000 — while Wilson stays close to 95%
-throughout. At $p = 0.5$ the two are nearly identical and both fine: the Wald interval is not wrong,
-it is wrong *near the boundaries*. With $k = 0$ it has zero width, and for $2/150$ its lower limit is
+throughout. At $p = 0.5$ both are fine from $n \approx 50$ on (Wald stays above 92%, at most about 3 points below
+Wilson, and the gap closes as $n$ grows; below that it still dips to 88–93%): the Wald interval is not wrong, it is wrong *near the boundaries*. With $k = 0$ it has zero width, and for $2/150$ its lower limit is
 negative; Wilson's never leaves $[0, 1]$. The hand-written Wilson formula matches `scipy.stats.binomtest`.
 """)
 
@@ -533,7 +669,14 @@ to within a millisecond) — reassuring, and a good unit test for bootstrap code
 95th percentile it produces intervals that no formula in this module could. Notice the p95 histogram:
 lumpy and more than three times wider than the median's, because a 95th percentile of 200 values is
 decided by the ten largest observations. The bootstrap distribution also reveals skew — the interval for the
-median is not symmetric around the estimate.
+95th percentile is far from symmetric around the estimate (44 ms below it, 22 ms above), because resampling
+can lose the few largest values but cannot invent larger ones.
+
+One caution before trusting these intervals: compare them with the truth, which we know here because we
+built the population — true median 150 ms, true mean 179.6 ms, true 95th percentile 402.4 ms. This particular
+sample happens to be a low one (a sample mean this small occurs in about 0.4% of samples of 200 from this
+population), and every interval above misses the truth. That is what the failures of Section 5 look like
+from the inside: neither the formula nor the bootstrap can tell from the sample that it is unlucky.
 
 ### A statistic of pairs, and a statistic where the bootstrap fails
 
@@ -555,7 +698,32 @@ r_boot = (xs * ys).sum(1) / np.sqrt((xs ** 2).sum(1) * (ys ** 2).sum(1))
 fisher = np.tanh(np.arctanh(r_hat) + np.array([-1, 1]) * 1.96 / np.sqrt(n_pairs - 3))
 print(f"correlation: r = {r_hat:.3f} (true rho = {rho})   bootstrap SE {r_boot.std(ddof=1):.3f}   percentile CI [{np.quantile(r_boot, 0.025):.3f}, {np.quantile(r_boot, 0.975):.3f}]"
       f"   Fisher-z CI [{fisher[0]:.3f}, {fisher[1]:.3f}]")
+""")
 
+nb.code(r"""
+counts = np.bincount(pair_idx[0], minlength=n_pairs)            # how often the first resample drew each pair
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.8))
+ax1.scatter(Z[counts == 0, 0], Z[counts == 0, 1], s=35, facecolors="none", edgecolors="grey", label=f"left out ({(counts == 0).sum()} of {n_pairs})")
+for k in range(1, counts.max() + 1):
+    ax1.scatter(Z[counts == k, 0], Z[counts == k, 1], s=35 * k, color="C0", alpha=0.6, label=f"drawn {k}x ({(counts == k).sum()} points)")
+ax1.set_xlabel("x"); ax1.set_ylabel("y"); ax1.set_title(f"The first bootstrap resample of the {n_pairs} pairs (r* = {r_boot[0]:.3f})", fontsize=10); ax1.legend(fontsize=7)
+lo_r, hi_r = np.quantile(r_boot, [0.025, 0.975])
+ax2.hist(r_boot, bins=60, alpha=0.7, label=f"{B:,} bootstrap replicates r*")
+ax2.axvline(r_hat, color="k", label=f"sample r = {r_hat:.3f}")
+ax2.axvline(lo_r, color="C3", ls="--", label=f"percentile CI [{lo_r:.2f}, {hi_r:.2f}]"); ax2.axvline(hi_r, color="C3", ls="--")
+ax2.axvline(fisher[0], color="C2", ls=":", lw=2, label=f"Fisher-z CI [{fisher[0]:.2f}, {fisher[1]:.2f}]"); ax2.axvline(fisher[1], color="C2", ls=":", lw=2)
+ax2.axvline(rho, color="grey", lw=1, label=f"true rho = {rho}")
+ax2.set_xlim(-0.25, 0.9); ax2.set_xlabel("correlation coefficient"); ax2.set_ylabel("count"); ax2.set_title("Bootstrap distribution of r (pairs resampled together)", fontsize=10); ax2.legend(fontsize=7, loc="upper left")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** one resample uses only about two thirds of the pairs — the rest are left out while others appear
+two, three or four times — and that the replicates $r^*$ form a left-skewed histogram around $r$ whose 2.5% and
+97.5% quantiles (red) almost coincide with the Fisher-$z$ limits (green), which needed a transformation to derive.
+""")
+
+nb.code(r"""
 # the maximum: bootstrap distribution vs the true sampling distribution
 u = rng.random(50); u_max = u.max()
 true_max = rng.random(size=(B, 50)).max(1)                      # resample from the POPULATION (possible only in a simulation)
@@ -577,7 +745,7 @@ mostly *above* the sample maximum. The plug-in principle fails because the maxim
 extreme tail of $F$, where the empirical distribution is a poor substitute.
 
 **Try it yourself:** increase `B` from 10,000 to 50,000 for the median — does the interval change much?
-(It should not: the bootstrap's error is dominated by $n$, not by $B$.) Then try `n_lat = 20` latencies.
+(It should not: the bootstrap's error is dominated by $n$, not by $B$.) Then draw only 20 latencies (`size=20` where `latency` is generated in Section 2) and re-run from there.
 """)
 
 # ---------------------------------------------------------------- 7. sample size
@@ -612,13 +780,14 @@ for acc in (0.5, 0.7, 0.9, 0.95, 0.99):
 es = np.logspace(-2.5, -1, 100)
 for acc in (0.5, 0.9, 0.99):
     plt.loglog(es * 100, [n_for_proportion(e, p=acc) for e in es], label=f"accuracy near {acc}")
-plt.loglog(es * 100, [n_for_mean(15, e * 500) for e in es], "k--", label=r"mean, $\sigma = 15$, $e$ in units of 500")
-plt.xlabel("required half-width of the 95% interval (percentage points)"); plt.ylabel("required sample size n")
-plt.title("Sample size grows like 1/e^2"); plt.legend(fontsize=8); plt.grid(True, which="both", alpha=0.3); plt.show()
+plt.loglog(es * 100, [n_for_mean(1.0, e) for e in es], "k--", label=r"mean, half-width $e$ as a fraction of $\sigma$")
+plt.xlabel("required half-width $e$ of the 95% interval\n" + r"(percentage points; for the mean, % of $\sigma$)"); plt.ylabel("required sample size n")
+plt.title("Sample size grows like 1/e^2"); plt.legend(fontsize=8); plt.grid(True, which="both", alpha=0.3); plt.tight_layout(); plt.show()
 """)
 
 nb.md(r"""
-Every line has slope $-2$ on log–log axes: a tenfold tighter interval costs a hundredfold more data.
+Every line has slope $-2$ on log–log axes (the small steps at the bottom right are the rounding of $n$ up
+to an integer): a tenfold tighter interval costs a hundredfold more data.
 Near 50% accuracy — the regime of hard benchmarks — a ± 1 point claim needs about 9,600 examples; a
 100-prompt evaluation has a margin of about ± 10 points. Plan the test set *before* labelling.
 """)
@@ -707,11 +876,12 @@ for k in (1, 3, 5, 10, 24):
     best_of[k] = scores.max(1)
     print(f"{k:4d}{best_of[k].mean():16.4f}{best_of[k].mean() - acc_true:+10.4f}{se_val * expected_max_normals(k):14.4f}")
 
-plt.hist(best_of[1], bins=np.arange(0.70, 0.93, 0.005), alpha=0.6, density=True, label="a single run (k = 1)")
-plt.hist(best_of[24], bins=np.arange(0.70, 0.93, 0.005), alpha=0.6, density=True, label="best of k = 24 runs")
+bins = (np.arange(140, 187) - 0.5) / 200                        # one bin per possible score k/200, centred on it
+plt.hist(best_of[1], bins=bins, alpha=0.6, density=True, label="a single run (k = 1)")
+plt.hist(best_of[24], bins=bins, alpha=0.6, density=True, label="best of k = 24 runs")
 plt.axvline(acc_true, color="k", ls="--", label="true accuracy of every run")
 plt.xlabel("reported validation accuracy"); plt.ylabel("density"); plt.title("Selecting the best of k equally good models")
-plt.legend(); plt.show()
+plt.legend(fontsize=8, loc="upper left"); plt.show()
 """)
 
 nb.md(r"""
@@ -866,7 +1036,7 @@ check_close('variance with divisor n', _safe(my_var, v_even, 0), np.var(v_even, 
 check_close('variance with divisor n-1', _safe(my_var, v_even, 1), np.var(v_even, ddof=1))
 check_close('MAD of v_odd matches scipy', _safe(my_mad, v_odd), stats.median_abs_deviation(v_odd))
 check_hash('hidden: MAD of times', _safe(my_mad, times), '{sha_of(ns1["mad_times"])}')
-check_close('10% trimmed mean of v_even matches scipy', _safe(my_trimmed_mean, v_even, 0.10), stats.trim_mean(v_even, 0.10))
+check_close('20% trimmed mean of v_even matches scipy', _safe(my_trimmed_mean, v_even, 0.20), stats.trim_mean(v_even, 0.20))
 check_hash('hidden: 10% trimmed mean of times', _safe(my_trimmed_mean, times, 0.10), '{sha_of(ns1["trim_times"])}')
 check('trimmed mean with alpha = 0 is the mean', (lambda a, b: a is not None and b is not None and abs(a - b) < 1e-9)(_safe(my_trimmed_mean, times, 0.0), _safe(my_mean, times)))
 """,

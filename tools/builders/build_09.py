@@ -97,9 +97,35 @@ print(f"{keep.sum()} of {n} simulated customers are 35-54  (exact marginal 0.40)
 print("empirical P(purchase | 35-54) by filtering:", emp_cond.round(3), "   exact:", cond_Y_given_X[1].round(3))
 """)
 
+nb.code(r"""
+# independence is a statement about a whole table: compare the joint with the outer product of its marginals
+fig, axes = plt.subplots(1, 3, figsize=(11, 3.4))
+panels = [(J, "joint table p(age, purchases)", "Blues", 0.0, 0.20, "{:.3f}"),
+          (indep, "outer product p(age) p(purchases)", "Blues", 0.0, 0.20, "{:.3f}"),
+          (J - indep, "difference: joint - outer product", "RdBu_r", -0.05, 0.05, "{:+.3f}")]
+for ax, (table, title, cmap, vmin, vmax, fmt) in zip(axes, panels):
+    im = ax.imshow(table, cmap=cmap, vmin=vmin, vmax=vmax)
+    for i in range(3):
+        for j in range(3):
+            dark = abs(table[i, j]) > 0.6 * vmax               # white text on the dark cells
+            ax.text(j, i, fmt.format(table[i, j]), ha="center", va="center", fontsize=9, color="white" if dark else "black")
+    ax.set_xticks(range(3)); ax.set_xticklabels(purchases); ax.set_yticks(range(3)); ax.set_yticklabels(ages)
+    ax.set_xlabel("purchases last month"); ax.set_ylabel("age group"); ax.set_title(title, fontsize=10)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+plt.tight_layout(); plt.show()
+""")
+
 nb.md(r"""
-The middle row renormalised by $0.40$ gives $(0.375, 0.375, 0.25)$, exactly what filtering the simulated
-customers produces. The outer-product table differs from the joint in every cell (by up to $0.028$), and
+**Notice that** the difference panel is nowhere zero, and that the 35–54 row carries the biggest departures
+($-0.05$ under "none", $+0.028$ under "several"). That is exactly the row whose conditional
+$(0.375, 0.375, 0.25)$ differs most from the marginal $(0.50, 0.32, 0.18)$: dependence *is* the gap between the
+table and the outer product.
+""")
+
+nb.md(r"""
+The middle row renormalised by $0.40$ gives $(0.375, 0.375, 0.25)$, and filtering the simulated
+customers lands close to it: $(0.371, 0.379, 0.250)$. The outer-product table differs from the joint in every cell (by up to $0.05$, in the
+35–54/none cell; the smallest gap is $0.01$), and
 it has rank 1 while the real table has rank 3 — a joint table of independent variables is always a rank-1
 matrix, because every row is a rescaled copy of the marginal $p_Y$.
 
@@ -125,6 +151,7 @@ def corr_pair(rho, n):
 
 cases = [("rho = 0.9", corr_pair(0.9, n)), ("rho = -0.5", corr_pair(-0.5, n)), ("rho = 0 (independent)", corr_pair(0.0, n))]
 x = rng.standard_normal(n)
+x = np.concatenate([x[:n // 2], -x[:n // 2]])                  # mirror half the sample, so the cloud is exactly symmetric
 cases.append(("Y = X^2 (dependent!)", (x, x**2)))
 
 fig, axes = plt.subplots(1, 4, figsize=(12, 3.2))
@@ -161,8 +188,9 @@ print(f"Var(A + C) = {np.var(A + C, ddof=1):.4f}    Var A + Var C + 2 Cov = {np.
 
 nb.md(r"""
 The fourth panel is the point of the section: $Y$ is a deterministic function of $X$, yet Pearson's $r$
-and even Spearman's rank correlation are both about zero, because the relationship is neither linear nor
-monotone. Correlation measures how well a *straight line* describes the cloud, nothing more. Covariance
+and even Spearman's rank correlation are both zero (we drew a sample symmetric about $0$, so each point cancels
+with its mirror image; an ordinary sample of 400 would wobble a little around zero), because the relationship
+is neither linear nor monotone. Correlation measures how well a *straight line* describes the cloud, nothing more. Covariance
 changes with the units (77.5 cm·kg becomes 775 m·g); correlation does not — it is the covariance of the
 standardised variables.
 
@@ -214,7 +242,7 @@ quad = np.einsum("ij,jk,ik->i", dirs, Sigma_true, dirs)        # a'Sigma a for 5
 print(f"smallest a'Sigma a over 5000 random directions: {quad.min():.6f}")
 bad = np.array([[1.0, 0.9, 0.9], [0.9, 1.0, -0.9], [0.9, -0.9, 1.0]])
 print("eigenvalues of an impossible 'correlation matrix' (rho12 = rho13 = 0.9, rho23 = -0.9):", np.linalg.eigvalsh(bad).round(3))
-a = np.array([0, 1, 1.0]); print(f"  it would give Var(X2 + X3) = a'Ra = {a @ bad @ a:.2f} < 0")
+a = np.array([1, -1, -1.0]); print(f"  it would give Var(X1 - X2 - X3) = a'Ra = {a @ bad @ a:.2f} < 0")
 
 # crisis scenario: all correlations rise to 0.8
 Sigma_crisis = np.outer(sd, sd) * np.where(np.eye(3) == 1, 1.0, 0.8)
@@ -241,13 +269,16 @@ nb.md(r"""
 The from-scratch $S$ matches `np.cov(X, rowvar=False)` to machine precision (remember: `rowvar=False` or
 `np.cov(X.T)` — NumPy's default treats *rows* as variables). The portfolio volatility, $14.9\%$, lies
 between the uncorrelated value ($12.0\%$) and the weighted average ($19\%$); the two positive correlations
-cost almost three points, and in the crisis scenario the benefit of diversifying nearly vanishes. The
-"correlation matrix" with $0.9, 0.9, -0.9$ has a negative eigenvalue and would assign a *negative variance*
-to $X_2 + X_3$ — it cannot describe any random vector. Whitening by $S^{-1/2}$ turns the tilted cloud into
+cost almost three points, and in the crisis scenario the benefit of diversifying shrinks to less than a third
+(from $4.1$ to $1.2$ points of volatility). The "correlation matrix" with $0.9, 0.9, -0.9$ has a negative
+eigenvalue and would assign a *negative variance* ($-2.4$) to $X_1 - X_2 - X_3$, the direction of its $-0.8$
+eigenvector — it cannot describe any random vector. Whitening by $S^{-1/2}$ turns the tilted cloud into
 a round one with identity covariance.
 
-**Try it yourself:** set `size=4` in the sampling call and look at `np.linalg.eigvalsh(S)` — with fewer
-observations than dimensions plus one, the sample covariance is singular (an eigenvalue of zero).
+**Try it yourself:** set `size=3` in the sampling call and look at `np.linalg.eigvalsh(S)` — with no more
+observations than dimensions ($n \le d$) the centred data matrix has rank at most $n - 1 < d$, so the sample
+covariance is singular (an eigenvalue of zero, up to round-off). Try `size=4` too: the smallest eigenvalue
+is no longer zero, though still well below the true $0.0083$ (about $0.001$ on this seed).
 """)
 
 # ---------------------------------------------------------------- 4. multivariate Gaussian
@@ -289,12 +320,42 @@ ax.scatter(X2[:, 0], X2[:, 1], s=3, alpha=0.3, label="4000 samples x = Lz")
 for cval, lab in [(1.0, "1 sd  (Δ² = 1)"), (4.0, "2 sd  (Δ² = 4)"), (stats.chi2.ppf(0.95, 2), "95%  (Δ² = 5.99)")]:
     e = ellipse(np.zeros(2), Sigma, cval); ax.plot(e[0], e[1], lw=2, label=lab)
 for i in range(2):
-    ax.annotate("", xy=tuple(np.sqrt(lam[i]) * U[:, i]), xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="k", lw=2))
+    ax.annotate("", xy=tuple(np.sqrt(lam[i]) * U[:, i] * np.sign(U[0, i])), xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="k", lw=2))
+ax.plot([], [], "k-", marker=">", lw=2, label="eigenvectors scaled by sqrt(λ)")
 ax.set_aspect("equal"); ax.set_xlabel("x1"); ax.set_ylabel("x2"); ax.legend(fontsize=8, loc="upper left")
 ax.set_title("N(0, [[2,1],[1,1]]) — ellipses from the eigendecomposition of Σ"); plt.show()
 
 d2 = np.einsum("ij,jk,ik->i", X2, np.linalg.inv(Sigma), X2)    # squared Mahalanobis distance of every sample
 print(f"fraction of samples inside the 95% ellipse: {(d2 <= stats.chi2.ppf(0.95, 2)).mean():.3f}   (Δ² ~ chi-square with 2 degrees of freedom)")
+""")
+
+nb.code(r"""
+# sweep the direction a around the half circle: a and -a give the same variance, so 180 degrees is enough
+th = np.linspace(0, np.pi, 181)
+A = np.stack([np.cos(th), np.sin(th)])                         # 181 unit vectors, as columns
+formula = np.einsum("ij,jk,ki->i", A.T, Sigma, A)              # a'Sigma a for every direction
+empirical = np.var(X2 @ A, axis=0, ddof=1)                     # variance of the projected samples
+deg = np.degrees(th)
+ang_max = np.degrees(np.arctan2(U[1, 1], U[0, 1])) % 180
+ang_min = np.degrees(np.arctan2(U[1, 0], U[0, 0])) % 180
+
+fig, ax = plt.subplots(figsize=(7.5, 4))
+ax.plot(deg, formula, "k", lw=2, label="a'Σa (formula)")
+ax.plot(deg, empirical, color="C1", ls="--", lw=2, label="Var(a'x) of the 4000 samples")
+for ang, val, name, y_txt in [(ang_max, lam[1], "major", 2.78), (ang_min, lam[0], "minor", 0.14)]:
+    ax.axvline(ang, color="grey", ls=":", lw=1); ax.axhline(val, color="grey", ls=":", lw=1)
+    ax.text(ang, y_txt, f"{name} axis: λ = {val:.3f} at {ang:.1f}°", ha="center", fontsize=9, bbox=dict(fc="white", ec="none", pad=1))
+ax.set_xlim(0, 180); ax.set_ylim(0, 3)
+ax.set_xlabel("direction of a = (cos θ, sin θ): θ in degrees"); ax.set_ylabel("variance of the projection a'X")
+ax.set_title("Var(a'X) = a'Σa is never negative and is extreme along the eigenvectors"); ax.legend(fontsize=8, loc="lower left")
+plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the sample variances of the projected data trace the quadratic form closely, that the curve never
+dips below zero (Section 3's positive semidefiniteness made visible), and that its maximum and minimum occur
+precisely at the eigenvector angles with the eigenvalues as values — the same numbers that set the ellipse's
+semi-axes.
 """)
 
 nb.code(r"""
@@ -320,8 +381,9 @@ $(1, 1)$ and $(1, -1)$ are equally far from the origin in Euclidean terms, but o
 the other across it — the Mahalanobis distances $1$ and $5$ (hence densities differing by $e^2$) are what the
 Gaussian actually sees.
 
-**Try it yourself:** change the off-diagonal of `Sigma` to $-1$ and re-run; then to $1.4$ — what happens to
-the Cholesky factor when $\Sigma$ stops being positive definite?
+**Try it yourself:** change the off-diagonal of `Sigma` to $-1$ and re-run; then to $1.5$ ($1.4$ is still, just
+barely, positive definite, with determinant $0.04$) — what happens to the Cholesky factor when $\Sigma$ stops
+being positive definite?
 """)
 
 # ---------------------------------------------------------------- 5. conditioning
@@ -385,10 +447,43 @@ slope_w_on_h = S_hw[0, 1] / S_hw[0, 0]; slope_h_on_w = S_hw[0, 1] / S_hw[1, 1]
 print(f"\nregression slopes: weight on height {slope_w_on_h:.2f} kg/cm,  height on weight {slope_h_on_w:.2f} cm/kg,  product = {slope_w_on_h * slope_h_on_w:.2f} = rho^2 (not 1)")
 """)
 
+nb.code(r"""
+# the two regression lines and the long axis of the ellipse are three different lines
+rng_hw = np.random.default_rng(5)                              # a private generator: the shared rng stays untouched
+HW = mu_hw + rng_hw.standard_normal((1500, 2)) @ np.linalg.cholesky(S_hw).T
+lam_hw, U_hw = np.linalg.eigh(S_hw)
+slope_axis = U_hw[1, 1] / U_hw[0, 1]
+hh = np.linspace(140, 200, 2)
+
+fig, ax = plt.subplots(figsize=(6.5, 5.5))
+ax.scatter(HW[:, 0], HW[:, 1], s=4, alpha=0.3, label="1500 people")
+e = ellipse(mu_hw, S_hw, stats.chi2.ppf(0.95, 2)); ax.plot(e[0], e[1], "k", lw=1, label="95% ellipse")
+ax.plot(hh, 70 + slope_axis * (hh - 170), "k--", lw=1.5, label=f"long axis of the ellipse: slope {slope_axis:.2f}")
+ax.plot(hh, 70 + slope_w_on_h * (hh - 170), "r", lw=2, label=f"E[W | H]: slope {slope_w_on_h:.2f} kg/cm")
+ax.plot(hh, 70 + (hh - 170) / slope_h_on_w, "g", lw=2, label=f"E[H | W] read sideways: slope 1/{slope_h_on_w:.2f} = {1 / slope_h_on_w:.1f}")
+edges = np.arange(145, 200, 5.0)
+idx = np.digitize(HW[:, 0], edges)
+centres = [edges[k - 1] + 2.5 for k in range(1, len(edges)) if (idx == k).sum() >= 5]
+means = [HW[idx == k, 1].mean() for k in range(1, len(edges)) if (idx == k).sum() >= 5]
+ax.plot(centres, means, "s", color="r", ms=7, mec="k", label="mean weight in 5-cm height bins")
+ax.set_xlim(135, 205); ax.set_ylim(25, 132)
+ax.set_xlabel("height H (cm)"); ax.set_ylabel("weight W (kg)")
+ax.set_title("Regression to the mean: E[W | H] is flatter than the cloud's axis", fontsize=11); ax.legend(fontsize=8, loc="upper left")
+plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the binned means (squares) sit on the flatter red line, not on the ellipse's long axis: for any
+given height the centre of the cloud is pulled back towards the mean weight — that is regression to the mean. The
+green line is the other regression (height on weight) read sideways; the two cross only at the mean, and the
+regression slopes ($0.72$ kg/cm and $0.50$ cm/kg, the latter drawn here as $1/0.50 = 2.0$) multiply to
+$\rho^2 = 0.36$, so neither line is the inverse of the other.
+""")
+
 nb.md(r"""
 The filtered samples near $x_2 = 1.5$ have mean $\approx 1.5$ and variance $\approx 1$ — half the marginal
 variance of 2 — and the samples near the much rarer $x_2 = 3$ have the *same* variance with a shifted mean:
-in a Gaussian the conditional covariance never depends on the observed value. In the plot the red
+in a Gaussian the conditional covariance never depends on the observed value. In the two-panel plot the red
 conditional is both displaced and narrower than the blue marginal. The height/weight numbers show
 regression to the mean: a person $1.5$ standard deviations tall is predicted to be only $0.9$ standard
 deviations heavy, and the two regression slopes multiply to $\rho^2 = 0.36$, so you cannot invert one
@@ -420,8 +515,44 @@ print(f"within + between                = {cond_var.mean() + cond_mean.var():.3f
 print(f"tower property: E[E[Y|X]] = {cond_mean.mean():.3f} = E[Y] = {Y.mean():.3f}")
 print(f"fraction of variance explained by the segment: {cond_mean.var() / Y.var():.3f}")
 
-# Gaussian check: for Sigma = [[2,1],[1,1]], Var(X1|X2) = 1 and Var(E[X1|X2]) = Var(X2) = 1, summing to Sigma_11 = 2
-print(f"\nGaussian: E[Var(X1|X2)] + Var(E[X1|X2]) = {S_c[0, 0]:.1f} + {Sigma[1, 1]:.1f} = {S_c[0, 0] + Sigma[1, 1]:.1f} = Sigma_11")
+# Gaussian check: for Sigma = [[2,1],[1,1]], Var(X1|X2) = 1 and Var(E[X1|X2]) = Sigma_12^2 / Sigma_22 = 1, summing to Sigma_11 = 2
+between_g = Sigma[0, 1]**2 / Sigma[1, 1]                       # Var(E[X1|X2]) = Sigma_12^2 / Sigma_22
+print(f"\nGaussian: E[Var(X1|X2)] + Var(E[X1|X2]) = {S_c[0, 0]:.1f} + {between_g:.1f} = {S_c[0, 0] + between_g:.1f} = Sigma_11")
+""")
+
+nb.code(r"""
+# the same decomposition as a picture (no new random numbers: Y and in_B from the cell above)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4), gridspec_kw={"width_ratios": [2.2, 1]})
+ax1.hist([Y[~in_B], Y[in_B]], bins=np.linspace(0, 32, 129), stacked=True, color=["C0", "C1"],
+         label=["segment A: 60%, N(10, 4)", "segment B: 40%, N(20, 9)"])
+ax1.set_ylim(0, 8200)
+for xv, col, txt, ha, dx in [(10, "C0", "E[Y | A] = 10", "right", -0.2), (14, "k", "E[Y] = 14", "left", 0.2), (20, "C1", "E[Y | B] = 20", "left", 0.2)]:
+    ax1.axvline(xv, color=col, ls="--", lw=1.2)
+    ax1.text(xv + dx, 7650, txt, color=col, ha=ha, fontsize=8)
+ax1.annotate("", xy=(20, 6600), xytext=(10, 6600), arrowprops=dict(arrowstyle="<->", color="k", lw=1.5))
+ax1.text(15, 6830, "'between': the two means differ", ha="center", fontsize=8, bbox=dict(fc="white", ec="none", pad=1))
+ax1.annotate("", xy=(12, 3640), xytext=(8, 3640), arrowprops=dict(arrowstyle="<->", color="k", lw=1.5))
+ax1.text(7.8, 3640, "'within': sd 2", ha="right", va="center", fontsize=8)
+ax1.annotate("", xy=(23, 1610), xytext=(17, 1610), arrowprops=dict(arrowstyle="<->", color="k", lw=1.5))
+ax1.text(23.2, 1610, "'within': sd 3", ha="left", va="center", fontsize=8)
+ax1.set_xlabel("claim size Y"); ax1.set_ylabel("count")
+ax1.set_title("Var(Y) = spread inside the segments + spread of the segment means", fontsize=10); ax1.legend(fontsize=8, loc="center right")
+
+within = [cond_var.mean(), 6.0]; between = [cond_mean.var(), 24.0]
+ax2.bar(["simulation", "exact"], within, color="C0", label="E[Var(Y | X)] (within)")
+ax2.bar(["simulation", "exact"], between, bottom=within, color="C1", label="Var(E[Y | X]) (between)")
+for k in range(2):
+    ax2.text(k, within[k] / 2, f"{within[k]:.1f}", ha="center", va="center", color="white", fontsize=9)
+    ax2.text(k, within[k] + between[k] / 2, f"{between[k]:.1f}", ha="center", va="center", color="white", fontsize=9)
+ax2.axhline(Y.var(), color="k", ls=":", label=f"Var(Y) by simulation = {Y.var():.1f}")
+ax2.set_ylim(0, 38); ax2.set_ylabel("variance"); ax2.set_title("within + between = total", fontsize=10); ax2.legend(fontsize=7, loc="upper center", ncol=1)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** each hump has only the "within" spread (sd $2$ and $3$), while the gap between their centres is the
+"between" part — and that the bar shows the between part dominating: $24$ of the $30$ units of variance come from
+*which* segment a customer is in, which is why knowing the segment explains $80\%$ of the variance.
 """)
 
 nb.code(r"""
@@ -451,7 +582,7 @@ Within plus between reproduces the total variance, and the segment explains $24/
 second experiment no predictor beats the true conditional mean, whose MSE sits at the noise floor
 $\mathbb{E}[\operatorname{Var}(Y \mid X)] = 0.16$; the straight line is far above it because
 $\mathbb{E}[Y \mid X]$ is not linear here. Every regressor you will ever train is trying to approximate the
-black curve — and no amount of data or model capacity gets it below $0.16$.
+black curve — and no amount of data or model capacity gets its out-of-sample error below $0.16$.
 
 **Try it yourself:** increase the noise standard deviation from $0.4$ to $1.0$ and watch the gap between
 the straight line and the truth shrink *relative* to the noise floor — when is a linear model "good enough"?
@@ -560,7 +691,8 @@ ax1.plot(z, "o", ms=3, alpha=0.5, label="sensor")
 ax1.plot(mus, "r", lw=2, label="Kalman estimate")
 ax1.fill_between(np.arange(T), mus - 2*np.sqrt(Ps), mus + 2*np.sqrt(Ps), color="r", alpha=0.2, label="±2 sd")
 ax1.set_xlabel("time step"); ax1.set_ylabel("position"); ax1.set_title("Tracking a noisy sensor"); ax1.legend(fontsize=8)
-ax2.plot(Ks, lw=2); ax2.axhline(P_minus_inf / (P_minus_inf + r), color="k", ls="--", label="steady-state gain")
+ax2.plot(Ks, lw=2, label="gain K_t"); ax2.axhline(P_minus_inf / (P_minus_inf + r), color="k", ls="--", label="steady-state gain")
+ax2.annotate(f"K_0 = 4/{4 + r:g} = {Ks[0]:.3f}", xy=(0, Ks[0]), xytext=(6, Ks[0] - 0.012), fontsize=9, arrowprops=dict(arrowstyle="->", color="k"))
 ax2.set_xlabel("time step"); ax2.set_ylabel("Kalman gain K"); ax2.set_title("The gain settles within a few steps"); ax2.legend()
 plt.tight_layout(); plt.show()
 """)
@@ -577,11 +709,37 @@ print(f"Kalman formulas:        mean {mu_pred + K*(z_obs - mu_pred):.4f}, varian
 print(f"precisions add: 1/{P_pred} + 1/{r} = {1/P_pred + 1/r:.4f} = 1/{1/(1/P_pred + 1/r):.4f}")
 """)
 
+nb.code(r"""
+# the same update step as three densities: prediction, measurement, and the posterior that combines them
+grid = np.linspace(4, 20, 400)
+post = stats.norm.pdf(grid, m[0], np.sqrt(Vc[0, 0]))
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.plot(grid, stats.norm.pdf(grid, mu_pred, np.sqrt(P_pred)), "C0", lw=2, label=f"prediction N({mu_pred:.0f}, {P_pred:.0f})")
+ax.plot(grid, stats.norm.pdf(grid, z_obs, np.sqrt(r)), "C1", lw=2, label=f"measurement N({z_obs:.0f}, {r:.0f})")
+ax.plot(grid, post, "r", lw=2, label=f"posterior N({m[0]:.2f}, {Vc[0, 0]:.3f})"); ax.fill_between(grid, post, color="r", alpha=0.3)
+for xv, col in [(mu_pred, "C0"), (z_obs, "C1"), (m[0], "r")]:
+    ax.axvline(xv, color=col, ls=":", lw=1)
+ax.annotate("", xy=(m[0], 0.018), xytext=(mu_pred, 0.018), arrowprops=dict(arrowstyle="->", color="k", lw=1.5))
+ax.annotate(f"K = {K:.3f} of the way\nto the measurement", xy=(11.6, 0.022), xytext=(4.3, 0.13), fontsize=9,
+            arrowprops=dict(arrowstyle="-", color="grey", lw=0.8))
+ax.set_xlabel("position"); ax.set_ylabel("density")
+ax.set_title("One Kalman update: the posterior is the renormalised product of the two Gaussians", fontsize=10); ax.legend(fontsize=9)
+plt.show()
+""")
+
 nb.md(r"""
-The filter roughly halves the sensor's error, in line with the steady-state standard deviation
-$\sqrt{1.30} = 1.14$ against the sensor's $\sqrt3 = 1.73$, and the $\pm 2$ sd band contains the true track.
+**Notice that** the posterior is narrower than *both* curves it came from — precisions add,
+$1/5 + 1/3 = 1/1.875$ — and that its peak sits five-eighths of the way from the prediction to the measurement,
+which is exactly the gain $K = P^-/(P^- + r)$.
+""")
+
+nb.md(r"""
+The filter cuts the sensor's error by about a quarter on this short run (RMSE $1.11$ against $1.46$); in steady
+state the theory promises a third — sd $\sqrt{1.30} = 1.14$ against the sensor's $\sqrt3 = 1.73$ — which is to say
+the error variance is more than halved ($1.30$ against $3$). The $\pm 2$ sd band contains the true track at 57 of
+the 60 steps (95%, just what a calibrated filter should do); the misses are at $t = 10$, $11$ and $52$.
 The gain starts high (the prior is vague, $P = 4$) and settles to $0.434$ in about five steps; from then on
-every estimate is $43\%$ measurement and $57\%$ prediction. The last cell shows the update step is nothing
+every estimate is $43\%$ measurement and $57\%$ prediction. The one-step cell shows the update is nothing
 but Section 5's formula applied to the joint Gaussian of (state, measurement).
 
 **Try it yourself:** set `r = 30` (a terrible sensor) and then `r = 0.1` (an excellent one) — how do the
@@ -625,10 +783,11 @@ prior_samples = np.linalg.cholesky(Kss + jitter) @ rng.standard_normal((len(xs),
 post_samples = post_mean[:, None] + np.linalg.cholesky(post_cov + jitter) @ rng.standard_normal((len(xs), 3))
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
-ax1.plot(xs, prior_samples, lw=1.5); ax1.fill_between(xs, -2*sf, 2*sf, alpha=0.15)
-ax1.set_title("three functions from the GP prior (RBF, ℓ = 1)"); ax1.set_xlabel("x"); ax1.set_ylabel("f(x)")
+prior_lines = ax1.plot(xs, prior_samples, lw=1.5); prior_lines[0].set_label("3 prior samples")
+ax1.fill_between(xs, -2*sf, 2*sf, alpha=0.15, label="prior ±2σ_f band")
+ax1.set_title("three functions from the GP prior (RBF, ℓ = 1)"); ax1.set_xlabel("x"); ax1.set_ylabel("f(x)"); ax1.legend(fontsize=8, loc="lower center", ncol=2)
 ax2.fill_between(xs, post_mean - 1.96*post_sd, post_mean + 1.96*post_sd, alpha=0.25, label="95% band")
-ax2.plot(xs, post_samples, lw=1, alpha=0.7)
+post_lines = ax2.plot(xs, post_samples, lw=1, alpha=0.7); post_lines[0].set_label("3 posterior samples")
 ax2.plot(xs, post_mean, "r", lw=2, label="posterior mean")
 ax2.plot(xs, f_true(xs), "k--", lw=1, label="true function")
 ax2.plot(X_tr, y_tr, "ko", label="observations")
@@ -649,8 +808,8 @@ print(f"\nmax |mean - sklearn| = {np.abs(post_mean - sk_mean).max():.2e}   max |
 
 nb.md(r"""
 Near the observations the posterior standard deviation collapses to about $0.1$ (the noise level); between
-them it grows, and beyond $x = 4$ it returns to the prior value $1$ — the band widens exactly where there is
-no data, which is what makes Gaussian processes useful for deciding where to measure next. The posterior
+them it grows, and about two length-scales past the last observation (by $x \approx 5.5$) it is back at the
+prior value $1$ — the band widens exactly where there is no data, which is what makes Gaussian processes useful for deciding where to measure next. The posterior
 samples are plausible functions consistent with the data, not just a mean curve. Our thirty lines agree with
 `GaussianProcessRegressor` to machine precision: the library is the conditioning formula plus a Cholesky solve.
 """)
@@ -675,20 +834,35 @@ x_gauss, x_t = stats.norm.ppf(u_gauss), stats.norm.ppf(u_t)    # both get standa
 
 print(f"Pearson correlation:  Gaussian copula {np.corrcoef(x_gauss.T)[0, 1]:.3f}   t copula {np.corrcoef(x_t.T)[0, 1]:.3f}")
 print(f"Spearman correlation: Gaussian copula {stats.spearmanr(x_gauss)[0]:.3f}   t copula {stats.spearmanr(x_t)[0]:.3f}")
-mvn_ref = stats.multivariate_normal([0, 0], [[1, rho], [rho, 1]]); mvt_ref = stats.multivariate_t([0, 0], [[1, rho], [rho, 1]], df=nu)
+
+from scipy import integrate
+def joint_gauss(q):
+    # P(both below their q-quantile), Gaussian copula: integrate over asset 1, using the conditional normal of asset 2
+    a = stats.norm.ppf(q)
+    return integrate.quad(lambda t: stats.norm.pdf(t) * stats.norm.cdf((a - rho * t) / np.sqrt(1 - rho**2)), -np.inf, a)[0]
+def joint_t(q):
+    # the same for the t copula: given asset 1 = t, asset 2 is t with nu + 1 dof, centre rho t and the scale below
+    a = stats.t.ppf(q, nu)
+    scale = lambda t: np.sqrt((nu + t**2) * (1 - rho**2) / (nu + 1))
+    return integrate.quad(lambda t: stats.t.pdf(t, nu) * stats.t.cdf((a - rho * t) / scale(t), nu + 1), -np.inf, a)[0]
+
 print("\nP(asset 2 below its q-quantile | asset 1 below its q-quantile):   [simulated / exact]")
 for qtl in (0.05, 0.01, 0.001):
     sim_g = ((u_gauss[:, 0] < qtl) & (u_gauss[:, 1] < qtl)).mean() / qtl
     sim_t = ((u_t[:, 0] < qtl) & (u_t[:, 1] < qtl)).mean() / qtl
-    ex_g = mvn_ref.cdf([stats.norm.ppf(qtl)] * 2) / qtl
-    ex_t = mvt_ref.cdf([stats.t.ppf(qtl, nu)] * 2) / qtl
+    ex_g, ex_t = joint_gauss(qtl) / qtl, joint_t(qtl) / qtl
     print(f"  q = {qtl:5.1%}:  Gaussian copula {sim_g:.3f} / {ex_g:.3f}     t copula {sim_t:.3f} / {ex_t:.3f}     (independence: {qtl:.3f})")
-print("as q -> 0 the Gaussian conditional probability goes to 0 (no tail dependence); the t copula's tends to a positive limit")
+tail_lim = 2 * stats.t.cdf(-np.sqrt((nu + 1) * (1 - rho) / (1 + rho)), nu + 1)
+print(f"as q -> 0 the Gaussian conditional probability goes to 0 (no tail dependence); the t copula's tends to the positive limit {tail_lim:.4f}")
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 4.5), sharex=True, sharey=True)
 for ax, data, name in zip(axes, (x_gauss, x_t), ("Gaussian copula", "t copula (3 dof)")):
+    q1 = stats.norm.ppf(0.01)
     ax.scatter(data[:8000, 0], data[:8000, 1], s=3, alpha=0.4)
-    ax.axvline(stats.norm.ppf(0.01), color="r", ls=":"); ax.axhline(stats.norm.ppf(0.01), color="r", ls=":")
+    ax.axvline(q1, color="r", ls=":", label="1% quantile of each asset"); ax.axhline(q1, color="r", ls=":")
+    n_joint = ((data[:8000, 0] < q1) & (data[:8000, 1] < q1)).sum()
+    ax.text(0.97, 0.03, f"joint crashes among these 8000: {n_joint}", transform=ax.transAxes, ha="right", fontsize=8)
+    ax.legend(fontsize=8, loc="upper left")
     ax.set_title(f"{name}: same marginals, r = {np.corrcoef(data.T)[0, 1]:.2f}"); ax.set_xlabel("asset 1"); ax.set_ylabel("asset 2")
 plt.tight_layout(); plt.show()
 
@@ -706,18 +880,49 @@ for name, y in (("independent N(0,1)", rng.standard_normal(50_000)),
 print("exact MI for a Gaussian with rho = 0.707: -0.5 log2(1 - 0.5) = 0.5 bits;  for Y = X^2 it is unbounded (Y is a function of X)")
 """)
 
+nb.code(r"""
+# how the conditional crash probability changes with the threshold: exact curves, simulated points
+qs = np.logspace(-3, np.log10(0.5), 15)
+exact_g = [joint_gauss(q_) / q_ for q_ in qs]
+exact_t = [joint_t(q_) / q_ for q_ in qs]
+q_pts = np.array([0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5])
+sim_g = [((u_gauss[:, 0] < q_) & (u_gauss[:, 1] < q_)).mean() / q_ for q_ in q_pts]
+sim_t = [((u_t[:, 0] < q_) & (u_t[:, 1] < q_)).mean() / q_ for q_ in q_pts]
+
+fig, ax = plt.subplots(figsize=(7.5, 4.2))
+ax.semilogx(qs, exact_g, "C0", lw=2, label="Gaussian copula, exact")
+ax.semilogx(qs, exact_t, "C3", lw=2, label="t copula (3 dof), exact")
+ax.plot(q_pts, sim_g, "o", mfc="none", color="C0", label="Gaussian copula, simulated (100 000 pairs)")
+ax.plot(q_pts, sim_t, "s", mfc="none", color="C3", label="t copula, simulated (100 000 pairs)")
+ax.axhline(tail_lim, color="k", ls="--", lw=1, label=f"t-copula tail dependence λ = {tail_lim:.2f}")
+ax.plot(qs, qs, "k:", lw=1, label="independence: P = q")
+ax.invert_xaxis(); ax.set_ylim(0, 0.75)
+ax.set_xlabel("threshold q (both assets below their q-quantile)"); ax.set_ylabel("P(asset 2 crashes | asset 1 crashes)")
+ax.set_title("Tail dependence: the Gaussian copula forgets, the t copula remembers", fontsize=11); ax.legend(fontsize=8)
+plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the Gaussian curve keeps sliding towards zero as the threshold moves into the tail, while the $t$
+curve flattens onto its tail-dependence coefficient $\lambda \approx 0.31$. The two copulas agree in the bulk
+($q = 0.5$) and disagree more the further out you look, which is why a correlation estimated from ordinary days
+says nothing about joint crashes. The red squares run a little above their curve on this seed: all the points
+reuse the same 100,000 pairs, so one lucky batch of joint crashes lifts them together.
+""")
+
 nb.md(r"""
 The two scatter plots have the same marginals and nearly the same correlation, yet joint extremes (both
 below the red lines) are clearly more common under the $t$-copula. The conditional probability "asset 2
 crashes given that asset 1 crashed" tells the story: under the Gaussian copula it *falls* as the threshold
 moves further into the tail (towards zero — no tail dependence), while under the $t$-copula it stays around
 a third no matter how extreme the event (the exact column is the one to trust at $q = 0.1\%$, where the
-simulation rests on only about a hundred joint events). At the 0.1% level the joint crash is already about
-five to six times more likely. No univariate check and no correlation matrix would detect the difference — this is the mechanism
-behind the 2008 mispricing described in the guide. Mutual
+simulation rests on just 38 joint crashes under the $t$-copula and 6 under the Gaussian). At the 0.1% level the
+joint crash is already about five to six times more likely. No univariate check and no correlation matrix would
+detect the difference — this is the mechanism behind the 2008 mispricing described in the guide. Mutual
 information, by contrast, sees what correlation misses: it is about $0$ for the independent pair, close to the
-exact $0.5$ bits for the $\rho = 0.707$ Gaussian (the histogram estimate is slightly biased upwards), and large
-for $Y = X^2$ despite its zero correlation.
+exact $0.5$ bits for the $\rho = 0.707$ Gaussian (binning loses a little information, so the estimate falls just
+short of $0.5$; the finite-sample bias goes the other way and is what the independent pair's $0.01$ bits is made
+of), and large for $Y = X^2$ despite its zero correlation.
 """)
 
 nb.md(r"""
@@ -864,10 +1069,12 @@ check_hash('P(sunny | high demand)  (compare with P(sunny) = 0.45)', got, '{sha_
 try:
     got_dep = is_independent(J)
     got_ind = is_independent(np.outer(J.sum(axis=1), J.sum(axis=0)))
+    ok_dep = got_dep is not None and not got_dep
+    ok_ind = got_ind is not None and bool(got_ind)
 except Exception:
-    got_dep, got_ind = None, None
-check('the table is detected as dependent', got_dep is False)
-check('the outer-product table is detected as independent', got_ind is True)
+    ok_dep, ok_ind = False, False
+check('the table is detected as dependent', ok_dep)
+check('the outer-product table is detected as independent', ok_ind)
 """,
     explanation_md=r"""
 Marginalising is summing along an axis: `J.sum(axis=1)` adds across each row (summing out the demand) and
@@ -1007,9 +1214,12 @@ the target, and drops it: "it carries no information about $y$."
    all; a model with $X^2$ as a feature predicts it perfectly.
 2. For *jointly Gaussian* vectors. If $\Sigma$ is diagonal the density $\exp(-\tfrac12 (x - \mu)^\top \Sigma^{-1}(x - \mu))$
    splits into a product of one-dimensional factors, which is the definition of independence. The argument uses the
-   specific form of the Gaussian density — that it depends on the data only through a quadratic form — and no
-   other family has that property, so for other distributions a diagonal covariance says nothing about the joint
-   beyond its second moments.
+   specific form of the Gaussian density — the *exponential* of a quadratic form, so a diagonal $\Sigma$ turns the sum
+   in the exponent into a product of factors. Depending on $x$ only through a quadratic form is not enough: a
+   multivariate $t$ with diagonal scale does too, and its coordinates are uncorrelated yet dependent. The Gaussian
+   is the standard example; a pair of binary variables is another, because a $2 \times 2$ table has only one degree
+   of freedom of dependence. In general, though, a diagonal covariance says nothing about the joint beyond its
+   second moments.
 3. *Mutual information* $I(X; Y) = D_{\mathrm{KL}}(p_{XY} \| p_X p_Y)$ is zero if and only if $X$ and $Y$ are
    independent and would be large (formally infinite for a deterministic continuous relationship) in the example.
    *Spearman's rank correlation* catches monotone non-linear dependence, though not this symmetric one; a *scatter
@@ -1134,13 +1344,15 @@ try:
     emp = float(np.std(X @ np.full(4, 0.25), ddof=1))
 except Exception:
     got, emp = None, None
-check_close('w^T S w equals the empirical variance of the portfolio returns X w', got, emp, tol=1e-9)
+check_close('sqrt(w^T S w) equals the empirical standard deviation of the portfolio returns X w', got, emp, tol=1e-9)
 try:
     got_good = is_psd(Sigma); got_bad = is_psd(np.array([[1.0, 0.9, 0.9], [0.9, 1.0, -0.9], [0.9, -0.9, 1.0]]))
+    ok_good = got_good is not None and bool(got_good)
+    ok_bad = got_bad is not None and not got_bad
 except Exception:
-    got_good, got_bad = None, None
-check('Sigma is recognised as positive semidefinite', got_good is True)
-check('the impossible correlation matrix (0.9, 0.9, -0.9) is rejected', got_bad is False)
+    ok_good, ok_bad = False, False
+check('Sigma is recognised as positive semidefinite', ok_good)
+check('the impossible correlation matrix (0.9, 0.9, -0.9) is rejected', ok_bad)
 try:
     C = np.asarray(cov_to_corr(Sigma), float)
     ok_diag = np.allclose(np.diag(C), 1.0)
@@ -1259,9 +1471,9 @@ check_close('stable for a large-variance 5-D case', got, float(stats.multivariat
     explanation_md=r"""
 Factor $\Sigma = LL^\top$ once; then $\Sigma^{-1} = L^{-\top}L^{-1}$, so $(x - \mu)^\top\Sigma^{-1}(x - \mu) = \|L^{-1}(x - \mu)\|^2$,
 and $|\Sigma| = |L|^2 = \prod_i L_{ii}^2$ gives $\log|\Sigma| = 2\sum_i\log L_{ii}$. This costs one $O(d^3)$ factorisation plus
-an $O(d^2)$ triangular solve per point, it never forms the inverse (which squares the condition number), and it never
-underflows the determinant — for $d = 1{,}000$ features with unit variances, `np.linalg.det` would already overflow
-or underflow for variances far from 1 while the sum of logs is harmless. The values $\log f(1, 1) = \log(e^{-1/2}/2\pi)$
+an $O(d^2)$ triangular solve per point, it never forms the inverse (the factor $L$ has only the square root of $\Sigma$'s condition number, so the triangular solve is both cheaper and more accurate), and it never
+underflows the determinant — for $d = 1{,}000$ features with variances of $0.01$, $|\Sigma| = 10^{-2000}$ underflows to
+$0$ in `np.linalg.det`, while the sum of logs is harmless. The values $\log f(1, 1) = \log(e^{-1/2}/2\pi)$
 and $\Delta^2(1, -1) = 5$ are the guide's hand computation. `scipy.stats.multivariate_normal` does the same thing
 internally (via an eigendecomposition, so it also handles singular $\Sigma$).
 """,
@@ -1596,11 +1808,14 @@ try:
     s1 = is_simpson(counts)
     s2 = is_simpson({{"A": {{"mild": (20, 18), "severe": (80, 48)}}, "B": {{"mild": (80, 68), "severe": (20, 10)}}}})
     s3 = is_simpson({{"A": {{"mild": (50, 45), "severe": (50, 30)}}, "B": {{"mild": (50, 40), "severe": (50, 25)}}}})
+    ok_s1 = s1 is not None and bool(s1)
+    ok_s2 = s2 is not None and bool(s2)
+    ok_s3 = s3 is not None and not s3
 except Exception:
-    s1, s2, s3 = None, None, None
-check('kidney-stone data show the paradox', s1 is True)
-check("the guide's treatment table shows the paradox", s2 is True)
-check('balanced groups (50/50 in both arms) show no paradox', s3 is False)
+    ok_s1, ok_s2, ok_s3 = False, False, False
+check('kidney-stone data show the paradox', ok_s1)
+check("the guide's treatment table shows the paradox", ok_s2)
+check('balanced groups (50/50 in both arms) show no paradox', ok_s3)
 """,
     explanation_md=r"""
 Stratified rates are ratios inside each cell; aggregate rates pool the numerators and denominators; the
@@ -1883,6 +2098,7 @@ axes[1].plot(z - x_true, ".", ms=3, alpha=0.5, label="sensor error")
 axes[1].plot(moving_average(z, 10) - x_true, "g", lw=1.2, label="moving-average error")
 axes[1].plot(mus - x_true, "r", lw=1.5, label="Kalman error")
 axes[1].axhline(0, color="k", lw=0.8); axes[1].set_xlabel("time step"); axes[1].set_ylabel("error"); axes[1].legend(fontsize=8)
+axes[1].set_title(f"Errors against the true track (the {z[120] - x_true[120]:+.1f} spike is the sensor glitch at t = 120)")
 plt.tight_layout(); plt.show()
 print(f"\nerror right after the outlier at t = 120: sensor {z[120] - x_true[120]:+.2f}, Kalman {mus[120] - x_true[120]:+.2f}, "
       f"Kalman 5 steps later {mus[125] - x_true[125]:+.2f}  (the gain K = {Ks[120]:.2f} damps the glitch and the filter recovers)")

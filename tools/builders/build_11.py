@@ -5,7 +5,7 @@ build_11.py — generates lesson.ipynb, exercises.ipynb and solutions.ipynb for
 
 Run from the repository root:
 
-    python3 _authoring/builders/build_11.py
+    python3 tools/builders/build_11.py
     python3 tools/run_notebooks.py part-4-statistics/11-likelihood-and-bayesian-inference
 
 All hidden answers are computed here by *executing* the reference solutions and hashing
@@ -75,7 +75,7 @@ logL = np.log(L)
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.5))
 ax1.plot(p_grid, L); ax1.axvline(k / n, color="r", ls="--", label=f"MLE = k/n = {k/n}")
-ax1.set_xlabel("p"); ax1.set_ylabel("L(p)"); ax1.set_title("Likelihood of 7 heads in 10 flips"); ax1.legend()
+ax1.set_xlabel("p"); ax1.set_ylabel("L(p)"); ax1.set_title(f"Likelihood of {k} heads in {n} flips"); ax1.legend()
 ax2.plot(p_grid, logL); ax2.axvline(k / n, color="r", ls="--")
 ax2.set_ylim(-12, 0); ax2.set_xlabel("p"); ax2.set_ylabel("log L(p)"); ax2.set_title("Log-likelihood (same argmax)")
 plt.tight_layout(); plt.show()
@@ -84,7 +84,7 @@ for p in (0.5, 0.6, 0.7, 0.8, 0.9):
     print(f"p = {p}:  L = {binom_lik(p, k, n):.4f}   log L = {np.log(binom_lik(p, k, n)):.4f}")
 print(f"\nargmax on the grid: p = {p_grid[np.argmax(L)]:.3f}")
 print(f"likelihood ratio L(0.7)/L(0.5) = {binom_lik(0.7, k, n)/binom_lik(0.5, k, n):.3f}")
-print(f"integral of L over p in [0,1] = {np.trapezoid(L, p_grid):.4f}   (= 1/11 = {1/11:.4f}, so L is not a density in p)")
+print(f"integral of L over p in [0,1] = {np.trapezoid(L, p_grid):.4f}   (= 1/{n + 1} = {1/(n + 1):.4f}, so L is not a density in p)")
 """)
 
 nb.md(r"""
@@ -188,22 +188,33 @@ print(f"(c) scipy fit:     alpha = {a_sp:.5f}, beta = {1/scale_sp:.5f}")
 
 nb.code(r"""
 A, B = np.meshgrid(np.linspace(0.5, 12, 200), np.linspace(0.2, 6, 200))
-LL = np.array([[-nll_gamma(np.log([a, b]), x_g) for a in A[0]] for b in B[:, 0]])
+n_g = len(x_g)
+LL = n_g * A * np.log(B) - n_g * special.gammaln(A) + (A - 1) * np.log(x_g).sum() - B * x_g.sum()
 LL_max = LL.max()
-cs = plt.contour(A, B, LL, levels=LL_max - np.array([20, 10, 5, 3, 2, 1, 0.5, 0.1]), cmap="viridis")
+cs = plt.contour(A, B, LL, levels=LL_max - np.array([20, 10, 5, 3, 2, 1, 0.5, 0.1]), colors="0.25", linewidths=1, linestyles="solid")
 plt.clabel(cs, fmt=lambda v: f"{v - LL_max:.1f}", fontsize=7)
 plt.plot(alpha_bfgs, beta_bfgs, "r*", ms=12, label="MLE")
 plt.plot(np.linspace(0.5, 12, 50), np.linspace(0.5, 12, 50) / xbar, "k--", lw=1, label=r"profile: $\beta = \alpha/\bar{x}$")
+plt.ylim(0.2, 6)
 plt.xlabel(r"shape $\alpha$"); plt.ylabel(r"rate $\beta$"); plt.title("Gamma log-likelihood surface (levels = drop below maximum)")
 plt.legend(loc="lower right"); plt.show()
+
+# the curvature at the summit, as standard errors: invert the Fisher information matrix
+fisher_g = n_g * np.array([[special.polygamma(1, alpha_newton), -1 / beta_newton],
+                           [-1 / beta_newton, alpha_newton / beta_newton**2]])
+cov_g = np.linalg.inv(fisher_g)
+print(f"inverse Fisher matrix at the MLE: SE(alpha) = {np.sqrt(cov_g[0, 0]):.2f}, SE(beta) = {np.sqrt(cov_g[1, 1]):.2f}, "
+      f"correlation = {cov_g[0, 1] / np.sqrt(cov_g[0, 0] * cov_g[1, 1]):.3f}")
 """)
 
 nb.md(r"""
 Three methods, one summit: $\hat\alpha = 4.620$, $\hat\beta = 2.432$. The contour plot explains why the
 one-dimensional Newton route works: the dashed line $\beta = \alpha/\bar x$ is the ridge of the surface, and
-the full MLE lies on it. Notice the long diagonal valley — $\alpha$ and $\beta$ are strongly correlated in
-the likelihood (a larger shape with a larger rate fits almost as well), so with five data points neither is
-pinned down precisely. Section 4 turns that curvature into standard errors.
+the full MLE lies on it. Notice how long that diagonal ridge is: $\alpha$ and $\beta$ are strongly correlated
+in the likelihood (a larger shape with a larger rate fits almost as well), so with five data points neither is
+pinned down precisely. The inverse Fisher matrix puts numbers on it: $\operatorname{SE}(\hat\alpha) \approx 2.8$,
+$\operatorname{SE}(\hat\beta) \approx 1.6$ and a correlation of about $0.95$. Section 4 develops this
+curvature-to-standard-error link for one-parameter models.
 
 **Try it yourself:** generate `x_g = rng.gamma(4.62, 1/2.43, size=500)` and re-run — watch the contours
 tighten around the truth.
@@ -221,6 +232,8 @@ covers the truth about 95% of the time.
 """)
 
 nb.code(r"""
+from matplotlib.ticker import NullFormatter
+
 p_true, lam_true, reps = 0.3, 4.0, 5_000
 ns = np.array([10, 30, 100, 300, 1_000])
 print(f"{'n':>6s} | {'sd(p_hat)':>10s} {'1/sqrt(n i(p))':>15s} {'Wald coverage':>14s} | {'sd(lam_hat)':>12s} {'sqrt(lam/n)':>12s} {'Wald coverage':>14s}")
@@ -235,10 +248,12 @@ for n_ in ns:
     sd_p.append(p_hat.std()); sd_l.append(lam_hat.std())
     print(f"{n_:6d} | {p_hat.std():10.4f} {np.sqrt(p_true*(1-p_true)/n_):15.4f} {cover_p:14.3f} | {lam_hat.std():12.4f} {np.sqrt(lam_true/n_):12.4f} {cover_l:14.3f}")
 
-plt.loglog(ns, sd_p, "o-", label=r"empirical sd of $\hat p$ (Bernoulli, p = 0.3)")
-plt.loglog(ns, np.sqrt(p_true*(1-p_true)/ns), "k--", label=r"$1/\sqrt{n\,i(p)} = \sqrt{p(1-p)/n}$")
-plt.loglog(ns, sd_l, "s-", label=r"empirical sd of $\hat\lambda$ (Poisson, $\lambda$ = 4)")
-plt.loglog(ns, np.sqrt(lam_true/ns), "k:", label=r"$1/\sqrt{n\,i(\lambda)} = \sqrt{\lambda/n}$")
+plt.loglog(ns, sd_p, "o", ms=7, label=r"empirical sd of $\hat p$ (Bernoulli, p = 0.3)")
+plt.loglog(ns, sd_l, "s", ms=7, label=r"empirical sd of $\hat\lambda$ (Poisson, $\lambda$ = 4)")
+plt.loglog(ns, np.sqrt(p_true*(1-p_true)/ns), "k--", lw=1, label=r"$1/\sqrt{n\,i(p)} = \sqrt{p(1-p)/n}$")
+plt.loglog(ns, np.sqrt(lam_true/ns), "k:", lw=1, label=r"$1/\sqrt{n\,i(\lambda)} = \sqrt{\lambda/n}$")
+plt.yticks([0.02, 0.05, 0.1, 0.2, 0.5], ["0.02", "0.05", "0.1", "0.2", "0.5"])
+plt.gca().yaxis.set_minor_formatter(NullFormatter())
 plt.xlabel("sample size n"); plt.ylabel("standard deviation of the MLE"); plt.title("Fisher information predicts the spread of the MLE")
 plt.legend(fontsize=8); plt.show()
 
@@ -248,11 +263,70 @@ print(f"-> SE = 1/sqrt(47.6) = {1/np.sqrt(10/0.21):.4f};  95% Wald interval [{0.
 """)
 
 nb.md(r"""
-The empirical standard deviations sit on the dashed theory lines at every $n$, with the familiar slope
-$-1/2$ on log–log axes. Coverage of the Wald interval is close to 95% once $n$ is in the hundreds; at
-$n = 10$ it is visibly off (the normal approximation to $\hat p$ is poor, and $\hat p = 0$ gives a
-zero-width interval), which is why small-sample intervals need the exact Beta posterior of Section 6 or
-the methods of [Module 12](../12-hypothesis-testing-and-experiments/README.md).
+The empirical standard deviations (the markers) sit on the dashed and dotted theory lines at every $n$, with
+the familiar slope $-1/2$ on log–log axes. The coverage columns need more care. For $p = 0.3$ the simulated coverage at the sample
+sizes in this table is about 95% from $n = 30$ on, but only about 0.85 at $n = 10$ (the normal approximation to
+$\hat p$ is poor, and $\hat p = 0$ gives a zero-width interval; these are simulation estimates, and the exact
+values follow below), while the Poisson with $\lambda = 4$ is already fine at $n = 10$. The next two plots show where the standard error comes from and how strongly coverage depends on $p$.
+""")
+
+nb.code(r"""
+pp = np.linspace(0.45, 0.95, 501)
+fig, ax = plt.subplots(figsize=(8, 4))
+for (kk, nn), c in zip(((7, 10), (70, 100), (700, 1000)), ("C0", "C1", "C2")):
+    ph = kk / nn
+    J = nn / (ph * (1 - ph))                               # observed information = curvature at the peak
+    se_ = 1 / np.sqrt(J)
+    ax.plot(pp, kk * np.log(pp / ph) + (nn - kk) * np.log((1 - pp) / (1 - ph)), c, label=f"{kk} heads in {nn}: SE = {se_:.4f}")
+    ax.plot(pp, -0.5 * J * (pp - ph)**2, c, ls=":", lw=1)
+    ax.plot([ph - se_, ph + se_], [-0.5, -0.5], c + "o", ms=5)
+    print(f"{kk:3d} heads in {nn:4d}: curvature J = {J:7.1f}   SE = 1/sqrt(J) = {se_:.4f}")
+ax.axhline(-0.5, color="0.5", ls="--", lw=1, label="a drop of 1/2 from the peak")
+ax.plot([], [], "k:", lw=1, label=r"parabola $-\frac{1}{2}J(p - \hat p)^2$")
+ax.set_ylim(-4, 0.2); ax.set_xlabel("p"); ax.set_ylabel(r"$\ell(p) - \ell(\hat p)$")
+ax.set_title("More data, sharper peak: curvature sets the standard error"); ax.legend(fontsize=8, loc="lower left"); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** all three curves peak at $0.7$, but each tenfold increase in data multiplies the curvature $J$
+by 10 (47.6, 476, 4762), so each curve is $\sqrt{10} \approx 3.2$ times narrower. That answers the first question in
+Section 1's *Try it yourself* (the likelihood ratio it also asks for grows from 2.28 to about 3,745). A drop of
+$1/2$ in log-likelihood falls close to one standard error from the peak (the dots): within about 1% at $n = 1000$,
+about 3% at $n = 100$, and at $n = 10$ the curve crosses at 0.545 and 0.829 instead of 0.555 and 0.845. The dotted
+parabola is what the Wald interval assumes; within about two standard errors of the peak it misfits badly only at
+$n = 10$.
+""")
+
+nb.code(r"""
+def wald_coverage(n_, p_):
+    # exact, by enumeration: add up P(k) over the k whose Wald interval contains p_
+    k_ = np.arange(n_ + 1); ph = k_ / n_
+    return stats.binom.pmf(k_, n_, p_)[np.abs(ph - p_) <= 1.96 * np.sqrt(ph * (1 - ph) / n_)].sum()
+
+n_axis = np.arange(5, 301)
+fig, ax = plt.subplots(figsize=(8, 3.6))
+for p_, c in ((0.3, "C0"), (0.05, "C1")):
+    ax.plot(n_axis, [wald_coverage(int(n_), p_) for n_ in n_axis], c, lw=1, label=f"p = {p_}")
+    print(f"p = {p_}: " + ",  ".join(f"n = {n_}: {wald_coverage(n_, p_):.3f}" for n_ in (10, 30, 40, 100, 300)))
+ax.axhline(0.95, color="k", ls="--", lw=1, label="nominal 95%")
+ax.annotate("the click-through setting\nof Section 6 (n = 40, p = 0.05)", (40, wald_coverage(40, 0.05)), xytext=(75, 0.55),
+            fontsize=8, arrowprops=dict(arrowstyle="->", lw=0.8))
+ax.plot(40, wald_coverage(40, 0.05), "ko", ms=4); ax.plot(10, wald_coverage(10, 0.3), "ko", ms=4)
+ax.annotate("n = 10, p = 0.3", (10, wald_coverage(10, 0.3)), xytext=(60, 0.7), fontsize=8, arrowprops=dict(arrowstyle="->", lw=0.8))
+ax.set_ylim(0.3, 1); ax.set_xlabel("sample size n"); ax.set_ylabel("exact coverage of the Wald interval")
+ax.set_title("Wald coverage is jagged and worst near the boundary"); ax.legend(fontsize=8, loc="lower right"); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** for $p = 0.3$ coverage is 0.84 at $n = 10$ and from $n \approx 30$ on wobbles between about 0.91 and
+0.96, mostly a little under 95%, but for
+$p = 0.05$ it is 0.40 at $n = 10$, 0.87 at $n = 40$, 0.88 at $n = 100$ and still 0.93 at $n = 300$: there is no
+single sample size at which the interval "starts working". The sawtooth exists because $k$ is discrete: the set of
+$k$ whose interval contains $p$ changes only at particular $n$. Each sudden drop is a low value of $k$ leaving that
+set (for $p = 0.05$, $k = 1$ leaves at $n = 59$ and coverage falls from 0.95 to 0.80); between drops coverage climbs
+as the excluded small $k$ become less likely. Small samples and rates
+near the boundary are why we need the exact Beta posterior of Section 6 or the methods of
+[Module 12](../12-hypothesis-testing-and-experiments/README.md).
 """)
 
 # ---------------------------------------------------------------- 5. losses
@@ -276,14 +350,17 @@ mse = sse / n_pts
 sigma2 = 0.8**2
 nll_gauss = 0.5 * n_pts * np.log(2 * np.pi * sigma2) + sse / (2 * sigma2)
 
-fig, ax1 = plt.subplots()
-ax1.plot(w_grid, mse, "C0", label="MSE(w)"); ax1.set_xlabel("slope w"); ax1.set_ylabel("MSE", color="C0")
-ax2 = ax1.twinx(); ax2.plot(w_grid, nll_gauss, "C3", label="Gaussian NLL(w)"); ax2.set_ylabel("negative log-likelihood", color="C3")
-for ax, arr, c in ((ax1, mse, "C0"), (ax2, nll_gauss, "C3")):
-    ax.axvline(w_grid[np.argmin(arr)], color=c, ls="--", lw=1)
-plt.title("Different curves, identical argmin: least squares is Gaussian MLE"); fig.tight_layout(); plt.show()
-
 w_mse, w_nll = w_grid[np.argmin(mse)], w_grid[np.argmin(nll_gauss)]
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.6))
+ax1.plot(w_grid, mse, "C0"); ax1.axvline(w_mse, color="k", ls="--", lw=1, label=f"argmin w = {w_mse:.3f}")
+ax1.set_xlabel("slope w"); ax1.set_ylabel("MSE(w)"); ax1.set_title("Mean squared error"); ax1.legend(fontsize=8)
+for s_, c in ((0.4, "C1"), (0.8, "C3"), (1.6, "C2")):
+    ax2.plot(w_grid, 0.5 * n_pts * np.log(2 * np.pi * s_**2) + sse / (2 * s_**2), c, label=rf"assumed $\sigma$ = {s_}")
+ax2.axvline(w_mse, color="k", ls="--", lw=1, label=f"argmin w = {w_mse:.3f}")
+ax2.set_ylim(0, 400); ax2.set_xlabel("slope w"); ax2.set_ylabel("Gaussian NLL(w)"); ax2.set_title("NLL at three assumed noise levels"); ax2.legend(fontsize=8)
+plt.tight_layout(); plt.show()
+
 w_closed = (x_lin @ y_lin) / (x_lin @ x_lin)
 print(f"argmin MSE = {w_mse:.3f}   argmin Gaussian NLL = {w_nll:.3f}   closed-form least squares = {w_closed:.4f}")
 print(f"NLL = {0.5*n_pts*np.log(2*np.pi*sigma2):.3f} + SSE/{2*sigma2:.2f}  -> an affine function of SSE, so the minimiser cannot differ")
@@ -292,6 +369,12 @@ print(f"NLL = {0.5*n_pts*np.log(2*np.pi*sigma2):.3f} + SSE/{2*sigma2:.2f}  -> an
 r = np.array([0.5, -1.0, 0.2, 2.0, -0.3]); r_out = r.copy(); r_out[3] = 4.0
 print(f"\nresiduals {r}: SSE = {np.sum(r**2):.2f}, MAE = {np.mean(np.abs(r)):.2f}")
 print(f"one residual 2.0 -> 4.0:   SSE = {np.sum(r_out**2):.2f} (x{np.sum(r_out**2)/np.sum(r**2):.1f}),  MAE = {np.mean(np.abs(r_out)):.2f} (x{np.mean(np.abs(r_out))/np.mean(np.abs(r)):.1f})")
+""")
+
+nb.md(r"""
+**Notice that** the assumed noise level changes both the height of the NLL and its curvature (a smaller
+$\sigma$ means a sharper valley), yet the dashed line passes through the bottom of every curve. The noise level
+$\sigma$ matters for the uncertainty, not for the least-squares weights.
 """)
 
 nb.code(r"""
@@ -316,30 +399,66 @@ Xb = np.c_[np.ones(200), X_cls]                       # bias column
 sigmoid = lambda z: 1 / (1 + np.exp(-z))
 
 w = np.zeros(3); eta = 0.1; history = []
-for step in range(2_000):
+for step in range(10_000):
     p = sigmoid(Xb @ w)
     grad_ll = Xb.T @ (y_cls - p)                      # d(log-likelihood)/dw = X^T (y - p)   (Module 04/05)
     w += eta * grad_ll / 200
+    if step == 1_999:
+        w_2000 = w.copy()
     history.append(np.sum(y_cls * np.log(p) + (1 - y_cls) * np.log(1 - p)))
 
 from sklearn.linear_model import LogisticRegression
-clf = LogisticRegression(C=np.inf, max_iter=1000).fit(X_cls, y_cls)    # C = inf: no penalty, pure MLE
-print(f"\ngradient ascent: bias {w[0]:.4f}, weights {w[1:]}")
+clf = LogisticRegression(C=np.inf, max_iter=1000, tol=1e-8).fit(X_cls, y_cls)    # C = inf: no penalty, pure MLE
+p_sk = clf.predict_proba(X_cls)[:, 1]
+ll_sk = -log_loss(y_cls, p_sk, normalize=False)                        # the summed log-likelihood at sklearn's weights
+print(f"\ngradient ascent, 2,000 steps: bias {w_2000[0]:.4f}, weights {w_2000[1:]}")
+print(f"gradient ascent, 10,000 steps: bias {w[0]:.4f}, weights {w[1:]}")
 print(f"sklearn (unpenalised): bias {clf.intercept_[0]:.4f}, weights {clf.coef_[0]}")
-plt.plot(history); plt.xlabel("gradient-ascent step"); plt.ylabel("log-likelihood of the labels")
-plt.title("Logistic regression: climbing the Bernoulli log-likelihood"); plt.show()
+print(f"log-likelihood: after 2,000 steps {history[1_999]:.3f}, after 10,000 steps {history[-1]:.3f}, sklearn {ll_sk:.3f}")
+plt.plot(history, label="gradient ascent"); plt.axhline(ll_sk, color="k", ls="--", lw=1, label=f"sklearn MLE ({ll_sk:.2f})")
+plt.xlabel("gradient-ascent step"); plt.ylabel("log-likelihood of the labels")
+plt.title("Logistic regression: climbing the Bernoulli log-likelihood"); plt.legend(fontsize=8); plt.show()
 """)
 
 nb.md(r"""
 The BCE and the negative mean log-likelihood agree to every digit (and so does `log_loss`): they are the
-same formula. Gradient ascent on $\ell(w)$ with the gradient $X^\top(y - p)$ converges to the same weights
-scikit-learn finds, because `LogisticRegression` is a numerical MLE too. The outlier experiment shows the
-practical content of the Gaussian assumption — one residual doubled multiplies the SSE by 3.2 but the MAE
-by only 1.5.
+same formula. Gradient ascent on $\ell(w)$ with the gradient $X^\top(y - p)$ reaches the weights scikit-learn
+finds, to four decimals after 10,000 steps, because `LogisticRegression` is a numerical MLE too. It gets
+there slowly: the curve looks flat by step 1,000, yet the weights are still about 2% short after 2,000 steps.
+The outlier experiment shows the practical content of the Gaussian assumption — one residual doubled multiplies
+the SSE by 3.2 but the MAE by only 1.5.
 
 **Try it yourself:** make the classes separable (`y_cls = (X_cls @ np.array([1.5, -1.0]) > 0)`, no noise)
 and re-run the gradient-ascent cell: the weights keep growing and the log-likelihood keeps creeping toward
 zero — the MLE does not exist.
+""")
+
+nb.code(r"""
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 3.8))
+gauss_nll = lambda v: 0.5 * np.log(2 * np.pi) + v**2 / 2          # sigma = 1
+laplace_nll = lambda v: np.log(2) + np.abs(v)                     # b = 1
+rr = np.linspace(-5, 5, 401)
+ax1.plot(rr, gauss_nll(rr), "C0", label=r"Gaussian NLL ($\sigma = 1$)"); ax1.plot(rr, laplace_nll(rr), "C1", label=r"Laplace NLL ($b = 1$)")
+ax1.plot(r, gauss_nll(r), "C0o", ms=5); ax1.plot(r, laplace_nll(r), "C1s", ms=5)
+ax1.plot(4.0, gauss_nll(4.0), "C0*", ms=14, label="residual 2.0 pushed to 4.0"); ax1.plot(4.0, laplace_nll(4.0), "C1*", ms=14)
+ax1.set_ylim(0, 14); ax1.set_xlabel("residual"); ax1.set_ylabel("per-point NLL (nats)")
+ax1.set_title("The noise model sets the outlier penalty"); ax1.legend(fontsize=8, loc="upper center")
+print(f"residual 2 -> 4:  Gaussian {gauss_nll(2.0):.2f} -> {gauss_nll(4.0):.2f},  Laplace {laplace_nll(2.0):.2f} -> {laplace_nll(4.0):.2f}")
+
+pv = np.linspace(0.0005, 1, 800)
+ax2.plot(pv, -np.log(pv), "C0")
+for q, dx, dy in ((0.7, -0.14, 0.9), (0.1, 0.06, 0.5), (0.001, 0.07, -0.1)):
+    ax2.plot(q, -np.log(q), "ko", ms=5)
+    ax2.annotate(f"p = {q}: {-np.log(q):.3f} nats", (q, -np.log(q)), xytext=(q + dx, -np.log(q) + dy), fontsize=8)
+ax2.set_xlabel("probability given to the true class"); ax2.set_ylabel(r"$-\log p$ (nats)"); ax2.set_title("Cross-entropy punishes confident mistakes")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** moving one residual from 2 to 4 costs 6 more nats under the Gaussian (2.92 to 8.92) but only 2
+more under the Laplace (2.69 to 4.69): that is the SSE $\times 3.2$ against MAE $\times 1.5$ of the printout. A
+loss function is a belief about the noise, and the Gaussian believes large residuals are nearly impossible. On
+the right, the cost is gentle until the true class gets a tiny probability, then it grows without bound.
 """)
 
 # ---------------------------------------------------------------- 6. Bayesian inference
@@ -378,7 +497,9 @@ plt.plot(grid, post_g * len(grid), label="grid posterior (uniform prior)", lw=3,
 plt.plot(grid, post_exact.pdf(grid), "k--", label="exact Beta(3, 39)")
 plt.axvline(k_c / n_c, color="r", ls=":", label=f"MLE = {k_c/n_c}")
 plt.axvspan(*post_exact.ppf([0.025, 0.975]), alpha=0.15, color="C0", label="95% credible interval")
-plt.xlim(0, 0.3); plt.xlabel("click-through rate p"); plt.ylabel("posterior density"); plt.title("Posterior for p after 2 clicks in 40 impressions"); plt.legend(fontsize=8); plt.show()
+plt.plot([k_c/n_c - 1.96*se_wald, k_c/n_c + 1.96*se_wald], [0.6, 0.6], "C3", lw=4, solid_capstyle="butt", label="Wald 95% interval")
+plt.axvline(0, color="k", lw=0.8)
+plt.xlim(-0.03, 0.3); plt.xlabel("click-through rate p"); plt.ylabel("posterior density"); plt.title("Posterior for p after 2 clicks in 40 impressions"); plt.legend(fontsize=8); plt.show()
 
 print(f"\ngrid: mean {np.sum(grid * post_g):.4f}, 95% CI [{ci_grid[0]:.4f}, {ci_grid[1]:.4f}]")
 print(f"Beta(3,39): mean {post_exact.mean():.4f}, median {post_exact.median():.4f}, mode {2/40:.4f}, 95% CI {post_exact.ppf([0.025, 0.975]).round(4)}")
@@ -390,8 +511,25 @@ nb.md(r"""
 The grid posterior and the exact Beta coincide — Bayes' theorem on a fine grid *is* the integral, done
 numerically, and it works for any prior you can tabulate. The posterior is skewed: mode $0.05$ (the MLE),
 median $0.065$, mean $0.071$, and a 21% probability that the true rate exceeds 10%. The Wald interval
-$[-0.018, 0.118]$ is a reminder that the asymptotics of Section 4 have not arrived at $n = 40$, while the
-posterior is exact at any $n$.
+$[-0.018, 0.118]$ (the red bar, which crosses zero) is a reminder that the asymptotics of Section 4 have not
+arrived at $n = 40$, while the posterior is exact at any $n$.
+""")
+
+nb.code(r"""
+fig, axes = plt.subplots(1, 3, figsize=(11, 3.2))
+titles = ("Prior", f"Likelihood of {k_c} clicks in {n_c}\n(sums to {lik3.sum():.3f}, not 1)", f"Posterior = prior x likelihood / {evidence3:.4f}")
+for ax, vals, title, ylab in zip(axes, (prior3, lik3, post3), titles, ("P(p)", "P(D | p)", "P(p | D)")):
+    bars = ax.bar([f"{v:.2f}" for v in p_vals], vals)
+    ax.bar_label(bars, fmt="%.3f", fontsize=8); ax.set_ylim(0, 0.8)
+    ax.set_title(title, fontsize=10); ax.set_xlabel("click-through rate p"); ax.set_ylabel(ylab)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the likelihoods at 2% and 10% are almost equal (0.145 and 0.142), so the data cannot separate
+them and both fall together, from 0.25 to about 0.17. The 5% hypothesis gains, from 0.50 to 0.66, because its likelihood is about twice
+theirs. The middle panel does not sum to 1: only after multiplying by the prior and dividing by the evidence do
+we get a distribution.
 """)
 
 # ---------------------------------------------------------------- 7. conjugacy
@@ -415,21 +553,27 @@ for ax, m in zip(axes, (0, 5, 20, 100)):
     k_m = flips[:m].sum()
     a_m, b_m = a0 + k_m, b0 + m - k_m
     ax.plot(p_axis, stats.beta.pdf(p_axis, a_m, b_m))
-    ax.axvline(p_coin, color="r", ls="--", lw=1)
-    ax.fill_between(p_axis, 0, stats.beta.pdf(p_axis, a_m, b_m), where=(p_axis > stats.beta.ppf(0.025, a_m, b_m)) & (p_axis < stats.beta.ppf(0.975, a_m, b_m)), alpha=0.2)
+    ax.axvline(p_coin, color="r", ls="--", lw=1, label="true p")
+    ax.axvline(a_m / (a_m + b_m), color="C0", ls=":", lw=1.5, label="posterior mean")
+    if m:
+        ax.axvline(k_m / m, color="k", ls=":", lw=1, label="k/m")
+    else:
+        ax.plot([], [], "k:", lw=1, label="k/m")                 # no data yet, but keep the legend entry
+    ax.fill_between(p_axis, 0, stats.beta.pdf(p_axis, a_m, b_m), where=(p_axis > stats.beta.ppf(0.025, a_m, b_m)) & (p_axis < stats.beta.ppf(0.975, a_m, b_m)), alpha=0.2, label="95% credible interval")
     ax.set_title(f"after {m} flips: Beta({a_m}, {b_m})", fontsize=9); ax.set_xlabel("p")
     w_data = m / (a0 + b0 + m)
     data_part = f"{w_data:.3f} x {k_m/m:.3f} (data)" if m else "no data yet"
     print(f"after {m:3d} flips ({k_m:2d} heads): posterior mean {a_m/(a_m+b_m):.4f} = {data_part} + {1-w_data:.3f} x {a0/(a0+b0):.1f} (prior);"
           f"  95% CI [{stats.beta.ppf(0.025, a_m, b_m):.3f}, {stats.beta.ppf(0.975, a_m, b_m):.3f}]")
-axes[0].set_ylabel("posterior density"); fig.suptitle("Beta-Binomial updating from a Beta(2, 8) prior; red line = true p = 0.7", y=1.03)
+axes[0].set_ylabel("posterior density"); axes[0].legend(fontsize=7, loc="upper right")
+fig.suptitle(f"Beta-Binomial updating from a Beta({a0}, {b0}) prior; red line = true p = {p_coin}", y=1.03)
 plt.tight_layout(); plt.show()
 
 # sequential == batch
 a_seq, b_seq = a0, b0
 for f_ in flips:
     a_seq, b_seq = a_seq + int(f_), b_seq + 1 - int(f_)
-print(f"\nsequential (100 single-flip updates): Beta({a_seq}, {b_seq});  batch: Beta({a0 + flips.sum()}, {b0 + 100 - flips.sum()})  -> identical")
+print(f"\nsequential ({len(flips)} single-flip updates): Beta({a_seq}, {b_seq});  batch: Beta({a0 + flips.sum()}, {b0 + len(flips) - flips.sum()})  -> identical")
 """)
 
 nb.code(r"""
@@ -450,14 +594,57 @@ plt.xlabel("furnace temperature"); plt.ylabel("density"); plt.title("Normal-Norm
 
 nb.md(r"""
 The four panels tell the shrinkage story: the prior pulls the first few estimates toward 0.2, but by 100
-flips the data carry $100/110 = 91\%$ of the weight and the posterior sits on the true $p = 0.7$ with a
-narrow 95% band. Sequential and batch updates land on the same Beta — the likelihood factorises, so the
-order of arrival is irrelevant. In the Normal case the posterior is narrower than *both* the prior and the
-likelihood (precisions add), and its mean is almost the data mean because the sensor is far more precise
-than the prior.
+flips the data carry $100/110 = 91\%$ of the weight. In this run the posterior mean has climbed to about 0.62,
+still pulled below the sample proportion 0.66 by the prior, and the true $p = 0.7$ lies just inside the 95%
+band (the printout has the exact numbers). Sequential and batch updates land on the same Beta — the likelihood
+factorises, so the order of arrival is irrelevant. In the Normal case the posterior is narrower than *both* the
+prior and the likelihood (precisions add), and its mean is almost the data mean because the sensor is far more
+precise than the prior.
+""")
 
-**Try it yourself:** change the prior to Beta$(20, 80)$ (same mean, ten times the pseudo-count) — how many
-flips does it take before the posterior mean passes 0.5?
+nb.code(r"""
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 3.8))
+
+# left: the same flips as above, one at a time (consumes no random numbers)
+m_axis = np.arange(len(flips) + 1)
+k_cum = np.r_[0, np.cumsum(flips)]
+a_tr, b_tr = a0 + k_cum, b0 + m_axis - k_cum
+lo_tr, hi_tr = stats.beta.ppf(0.025, a_tr, b_tr), stats.beta.ppf(0.975, a_tr, b_tr)
+ax1.fill_between(m_axis, lo_tr, hi_tr, alpha=0.2, label="95% credible band")
+ax1.plot(m_axis, a_tr / (a_tr + b_tr), "C0", label="posterior mean")
+ax1.plot(m_axis[1:], k_cum[1:] / m_axis[1:], "k:", lw=1, label="MLE k/m")
+ax1.axhline(p_coin, color="r", ls="--", lw=1, label="true p")
+ax1.axhline(a0 / (a0 + b0), color="0.5", lw=1, label="prior mean")
+ax1.set_xlabel("number of flips m"); ax1.set_ylabel("p"); ax1.set_title("Flip by flip: the MLE races ahead, the prior holds back")
+ax1.legend(fontsize=7, ncol=2, loc="lower right", bbox_to_anchor=(1, 0.22))
+outside = m_axis[(p_coin < lo_tr) | (p_coin > hi_tr)]
+print(f"true p outside the 95% band at flips: {outside.tolist()}")
+print(f"at the last flip: k/m = {k_cum[-1]/m_axis[-1]:.3f}, posterior mean = {a_tr[-1]/(a_tr[-1]+b_tr[-1]):.3f}, 95% band [{lo_tr[-1]:.3f}, {hi_tr[-1]:.3f}], P(p < {p_coin}) = {stats.beta.cdf(p_coin, a_tr[-1], b_tr[-1]):.3f}")
+
+# right: 1,000 fresh flips under four priors (a local generator, so the shared rng stream is untouched)
+fl = np.random.default_rng(7).random(1000) < p_coin
+mm = np.arange(1, 1001); kk = np.cumsum(fl)
+for a_, b_ in ((2, 8), (1, 1), (8, 2), (20, 80)):
+    post_mean = (a_ + kk) / (a_ + b_ + mm)
+    ax2.semilogx(mm, post_mean, label=f"Beta({a_}, {b_})")
+    print(f"Beta({a_}, {b_}): posterior mean after 1,000 flips = {post_mean[-1]:.3f}")
+ax2.axhline(p_coin, color="r", ls="--", lw=1, label="true p")
+ax2.set_xlabel("number of flips m (log scale)"); ax2.set_ylabel("posterior mean"); ax2.set_title("Different priors, same destination"); ax2.legend(fontsize=8)
+print(f"Beta(20, 80) first passes 0.5 at flip {mm[np.argmax((20 + kk) / (100 + mm) > 0.5)]}")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the posterior mean always lies between the prior mean and the MLE, and the prior's share is
+$10/(10 + m)$. The 95% band is not a guarantee: in this run the true 0.7 lies outside it for the first few
+flips, when the prior dominates, and again around flips 48–89, because the sample ran low. On the right, after 1,000 flips three priors agree within 0.006 (0.698, 0.703,
+0.704), while the 100-pseudo-count Beta$(20, 80)$ is still at 0.657; it passed 0.5 only at flip 133 in this
+draw.
+
+**Try it yourself:** change the prior to Beta$(20, 80)$ in the first cell of this section (same mean, ten times
+the pseudo-count). How many flips does it take before the posterior mean passes 0.5? Solve
+$(20 + 0.7m)/(100 + m) = 0.5$ by hand for the expected answer, then raise the 100 in `flips` to 300 and read the
+crossing off the left panel above.
 """)
 
 # ---------------------------------------------------------------- 8. MAP = ridge
@@ -487,26 +674,69 @@ def map_fit(Phi, y, lam):
     w = np.linalg.solve(Pc.T @ Pc + lam * np.eye(Phi.shape[1]), Pc.T @ yc)
     return w, ym - Pm @ w
 
+in_range = (xx >= x_p.min()) & (xx <= x_p.max())              # score only where there are data, not the extrapolation
+rmse_truth = lambda w_, b_: np.sqrt(np.mean((Phi_xx @ w_ + b_ - f_true(xx))[in_range]**2))
 plt.scatter(x_p, y_p, color="k", zorder=3, label="data"); plt.plot(xx, f_true(xx), "k:", label="true function")
-print(f"{'tau':>8s} {'lambda = sigma^2/tau^2':>22s} {'||w||':>8s} {'max |w_ours - w_sklearn|':>26s}")
+plt.axvspan(-1, x_p.min(), color="0.92"); plt.axvspan(x_p.max(), 1, color="0.92", label="no data (extrapolation)")
+print(f"{'tau':>8s} {'lambda = sigma^2/tau^2':>22s} {'||w||':>8s} {'max |w_j|':>10s} {'RMSE vs truth':>14s} {'max |w_ours - w_sklearn|':>26s}")
 for tau in (1e3, 1.0, 0.1, 0.01):
     lam = sigma_noise**2 / tau**2
     w_map, b_map = map_fit(Phi, y_p, lam)
     ridge = Ridge(alpha=lam).fit(Phi, y_p)
-    plt.plot(xx, Phi_xx @ w_map + b_map, label=f"tau = {tau:g}  (lambda = {lam:.2g})")
-    print(f"{tau:8g} {lam:22.3g} {np.linalg.norm(w_map):8.2f} {np.max(np.abs(w_map - ridge.coef_)):26.2e}")
-plt.ylim(-2, 2); plt.xlabel("x"); plt.ylabel("y"); plt.title("Degree-9 polynomial: MAP under N(0, tau^2) priors = ridge"); plt.legend(fontsize=7); plt.show()
+    plt.plot(xx, Phi_xx @ w_map + b_map, label=rf"$\tau$ = {tau:g}  ($\lambda$ = {lam:g})")
+    print(f"{tau:8g} {lam:22.3g} {np.linalg.norm(w_map):8.2f} {np.abs(w_map).max():10.2f} {rmse_truth(w_map, b_map):14.3f} {np.max(np.abs(w_map - ridge.coef_)):26.2e}")
+plt.xlim(-1, 1); plt.ylim(-2, 2); plt.xlabel("x"); plt.ylabel("y")
+plt.title(r"Degree-9 polynomial: MAP under $\mathcal{N}(0,\tau^2)$ priors = ridge (curves clipped at $\pm 2$)", fontsize=10)
+plt.legend(fontsize=7, loc="upper left", bbox_to_anchor=(1.01, 1)); plt.tight_layout(); plt.show()
 """)
 
 nb.md(r"""
 With $\tau = 1000$ the prior is effectively flat, $\lambda \approx 10^{-7}$, and the MAP is the MLE: a
-wiggly degree-9 curve that threads the noise, with coefficients in the hundreds. Tightening $\tau$ to
-$0.1$ gives $\lambda = 9$ and a smooth fit close to the truth; $\tau = 0.01$ over-shrinks toward a flat
-line. The last column shows our normal-equations solution matching scikit-learn's `Ridge` to machine
-precision for every $\lambda$ — the regulariser *is* the prior.
+wiggly degree-9 curve that threads the noise, with a coefficient over 100 and a norm near 170. Tightening $\tau$
+to $1$ gives $\lambda = 0.09$ and a smooth fit close to the truth. At $\tau = 0.1$ ($\lambda = 9$) the fit already
+underfits, and $\tau = 0.01$ is nearly flat; the RMSE column rests these judgements on numbers. The grey bands
+have no data, so what the curves do there is extrapolation, not overfitting of the points. The last column shows
+our normal-equations solution matching scikit-learn's `Ridge` to about $10^{-8}$ at the ill-conditioned
+$\tau = 1000$ and to machine precision for the others — the regulariser *is* the prior.
 
 **Try it yourself:** multiply the data fivefold (`n_poly = 75`) and keep $\tau = 0.1$. The same prior now
 shrinks far less, because the data term has five times as many summands.
+""")
+
+nb.code(r"""
+lams = np.logspace(-8, 4, 60)
+fits = [map_fit(Phi, y_p, l_) for l_ in lams]
+rmse_data = [np.sqrt(np.mean((Phi @ w_ + b_ - y_p)**2)) for w_, b_ in fits]
+rmse_true = [rmse_truth(w_, b_) for w_, b_ in fits]
+norms = [np.linalg.norm(w_) for w_, _ in fits]
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 3.8))
+ax1.semilogx(lams, rmse_data, "C0", label=f"RMSE on the {n_poly} noisy points")
+ax1.semilogx(lams, rmse_true, "C1", label=r"RMSE against $\sin(3x)$ over the data range")
+ax1.axhline(sigma_noise, color="0.5", ls=":", label=f"noise sd = {sigma_noise}")
+ax2.loglog(lams, norms, "C0")
+for tau in (1e3, 1.0, 0.1, 0.01):
+    lam = sigma_noise**2 / tau**2
+    w_, b_ = map_fit(Phi, y_p, lam)
+    for ax in (ax1, ax2):
+        ax.axvline(lam, color="k", ls="--", lw=0.6)
+    ax1.text(lam * 1.3, 1.13, rf"$\tau$={tau:g}", fontsize=7)
+    print(f"tau = {tau:g}: lambda = {lam:g}, RMSE on the points {np.sqrt(np.mean((Phi @ w_ + b_ - y_p)**2)):.3f}, RMSE against the truth {rmse_truth(w_, b_):.3f}, ||w|| = {np.linalg.norm(w_):.3g}")
+i_best = int(np.argmin(rmse_true))
+print(f"best on this grid: lambda = {lams[i_best]:.3g} (tau = {sigma_noise / np.sqrt(lams[i_best]):.2f}), RMSE against the truth {rmse_true[i_best]:.3f}")
+ax1.set_ylim(0, 1.2); ax1.set_xlabel(r"$\lambda = \sigma^2/\tau^2$ (log scale)"); ax1.set_ylabel("RMSE")
+ax1.set_title("Too little prior, too much prior"); ax1.legend(fontsize=8, loc="center left")
+ax2.set_xlabel(r"$\lambda = \sigma^2/\tau^2$ (log scale)"); ax2.set_ylabel(r"$\|w\|$"); ax2.set_title("The prior shrinks the weights")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** training error only rises with $\lambda$, while error against the truth has a shallow
+minimum of 0.13 near $\tau \approx 3$, is about 0.15 for $\tau$ from 10 to 100 and 0.17 at $\tau = 1$, and climbs
+steeply once $\tau$ reaches 0.1 (0.58) and 0.01 (0.74), where the fit
+is collapsing toward a constant. $\|w\|$ falls from about 170 at $\tau = 1000$ to about 0.4 at $\tau = 0.1$ and
+0.007 at $\tau = 0.01$. This is the bias–variance trade-off of [Module 10](../10-estimation-and-sampling/README.md)
+seen from the Bayesian side: a tighter prior trades variance for bias.
 """)
 
 # ---------------------------------------------------------------- 9. predictive
@@ -533,7 +763,9 @@ clicks_sim = rng.binomial(m_future, p_draws)
 ks = np.arange(0, 31)
 plt.bar(ks - 0.2, plug_in.pmf(ks), width=0.4, label=f"plug-in Binomial(100, {p_bar:.3f})")
 plt.bar(ks + 0.2, predictive.pmf(ks), width=0.4, label="posterior predictive (Beta-Binomial)")
-plt.plot(ks, np.bincount(clicks_sim, minlength=200)[:31] / len(clicks_sim), "k.", label="simulated predictive")
+plt.plot(ks + 0.2, np.bincount(clicks_sim, minlength=200)[:31] / len(clicks_sim), "k.", label="simulated predictive")
+plt.plot(plug_in.ppf([0.025, 0.975]), [0.175, 0.175], "C0|-", lw=2, ms=8, label="plug-in 95% interval")
+plt.plot(predictive.ppf([0.025, 0.975]), [0.19, 0.19], "C1|-", lw=2, ms=8, label="predictive 95% interval")
 plt.xlabel("clicks in the next 100 impressions"); plt.ylabel("probability"); plt.title("Integrating over p widens the prediction"); plt.legend(fontsize=8); plt.show()
 
 print(f"plug-in:    mean {plug_in.mean():.2f}, sd {plug_in.std():.2f}, 95% interval {plug_in.ppf([0.025, 0.975]).astype(int)}")
@@ -550,10 +782,12 @@ print(f"  95% upper credible bound for the failure rate: {stats.beta.ppf(0.95, 1
 
 nb.md(r"""
 The predictive distribution has the same mean as the plug-in but a standard deviation of 4.7 instead of
-2.6, and a 95% interval of 1–18 clicks instead of 3–13: the plug-in interval is less than half as wide as it
+2.6, and a 95% interval of 1–18 clicks instead of 3–13: the plug-in interval is only about 60% as wide as it
 should be, because it pretends $p$ is known. The simulated histogram (dots) sits on the Beta-Binomial bars —
 "sample the parameter, then sample the data" is the posterior predictive integral done by Monte Carlo, and
-it works for any model, conjugate or not.
+it works for any model, conjugate or not. After zero failures in 20 tests the plug-in says failure is
+impossible, while the predictive gives 4.5% for the next test and a 32% chance of at least one failure in the
+next ten.
 """)
 
 # ---------------------------------------------------------------- 10. A/B
@@ -579,26 +813,36 @@ loss_choose_A = np.mean(np.maximum(pB - pA, 0))
 print(f"posterior means: A {postA.mean():.4f}, B {postB.mean():.4f};  posterior sds: A {postA.std():.4f}, B {postB.std():.4f}")
 print(f"P(B > A | data) = {prob_B_better:.4f}  (Monte Carlo SE {np.sqrt(prob_B_better*(1-prob_B_better)/S):.4f})")
 print(f"expected loss if we ship B: {loss_choose_B:.5f}   if we keep A: {loss_choose_A:.5f}   (ratio {loss_choose_A/loss_choose_B:.0f}x)")
+print(f"mean shortfall given that B really is worse: {np.mean((pA - pB)[pA > pB]):.4f}")
 print(f"95% credible interval for the lift p_B - p_A: [{np.percentile(pB - pA, 2.5):.4f}, {np.percentile(pB - pA, 97.5):.4f}]")
 
 # frequentist two-proportion z-test for comparison (Module 12)
 p_pool = (kA + kB) / (nA + nB)
 z = (kB/nB - kA/nA) / np.sqrt(p_pool * (1 - p_pool) * (1/nA + 1/nB))
-print(f"\nfrequentist: z = {z:.3f}, two-sided p-value = {2 * (1 - stats.norm.cdf(z)):.4f}  -> 'not significant at 5%'")
+p_value = 2 * (1 - stats.norm.cdf(abs(z)))
+print(f"\nfrequentist: z = {z:.3f}, two-sided p-value = {p_value:.4f}  -> '{'significant' if p_value < 0.05 else 'not significant'} at 5%'")
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 3.5))
 grid_ab = np.linspace(0.03, 0.09, 500)
-ax1.plot(grid_ab, postA.pdf(grid_ab), label="A: Beta(121, 2281)"); ax1.plot(grid_ab, postB.pdf(grid_ab), label="B: Beta(151, 2251)")
+ax1.plot(grid_ab, postA.pdf(grid_ab), label=f"A: Beta({1 + kA}, {1 + nA - kA})"); ax1.plot(grid_ab, postB.pdf(grid_ab), label=f"B: Beta({1 + kB}, {1 + nB - kB})")
 ax1.set_xlabel("conversion rate"); ax1.set_ylabel("posterior density"); ax1.set_title("Two posteriors"); ax1.legend()
-ax2.hist(pB - pA, bins=100, density=True, alpha=0.7); ax2.axvline(0, color="k", ls="--")
-ax2.set_xlabel("p_B - p_A"); ax2.set_ylabel("density"); ax2.set_title(f"Posterior of the lift: P(B > A) = {prob_B_better:.3f}")
+lift = pB - pA
+step_ = (lift.max() - lift.min()) / 100                         # bins with an edge exactly at 0
+edges = step_ * np.arange(np.floor(lift.min() / step_), np.ceil(lift.max() / step_) + 1)
+heights, _ = np.histogram(lift, bins=edges, density=True)
+worse = edges[:-1] < -step_ / 2
+ax2.bar(edges[:-1][~worse], heights[~worse], width=step_, align="edge", color="C0", alpha=0.7, label=f"B better ({np.mean(lift > 0):.1%})")
+ax2.bar(edges[:-1][worse], heights[worse], width=step_, align="edge", color="C3", alpha=0.9, label=f"B worse ({np.mean(lift < 0):.1%})")
+ax2.axvline(0, color="k", ls="--"); ax2.legend(fontsize=8)
+ax2.set_xlabel("$p_B - p_A$"); ax2.set_ylabel("density"); ax2.set_title(f"Posterior of the lift: P(B > A) = {prob_B_better:.3f}")
 plt.tight_layout(); plt.show()
 """)
 
 nb.md(r"""
 Both analyses are correct and they answer different questions. The posterior says: B is better with
-probability 0.97, and the expected cost of shipping it if that is wrong is 0.008 percentage points, roughly
-160 times smaller than the expected cost of keeping A. The $z$-test says the data would be this extreme 6% of
+probability 0.97, and the expected loss of shipping it, averaged over all outcomes (zero when B really is
+better), is 0.008 percentage points, roughly 160 times smaller than the expected loss of keeping A. If B does
+turn out worse, it is worse by about 0.25 points on average. The $z$-test says the data would be this extreme 6% of
 the time if the rates were equal — not below 5%, so by that rule you would not reject equality. A decision
 maker who needs to choose *now* wants the first pair of numbers; [Module 12](../12-hypothesis-testing-and-experiments/README.md)
 explains when and why the second matters.
@@ -613,7 +857,7 @@ nb.md(r"""
 - The likelihood $L(\theta) = \prod_i p(x_i \mid \theta)$ ranks parameters by how well they explain the data; it is not a distribution over $\theta$ (the coin example integrates to $1/11$).
 - Closed-form MLEs: $\hat p = k/n$, $\hat\lambda = \bar x$ (Poisson), $\hat\lambda = 1/\bar x$ (Exponential), $\hat\mu = \bar x$, $\hat\sigma^2 = \frac1n\sum(x_i - \bar x)^2$ — biased by $(n-1)/n$, confirmed by simulation.
 - Without a closed form (Gamma shape, logistic regression), minimise the NLL numerically; reparameterise to respect constraints; Newton, BFGS and `scipy.stats.*.fit` agree.
-- The Fisher information predicts the spread of the MLE: empirical standard deviations match $1/\sqrt{n\,i(\theta)}$ and Wald intervals cover ~95% for moderate $n$.
+- The Fisher information predicts the spread of the MLE: empirical standard deviations match $1/\sqrt{n\,i(\theta)}$ and Wald intervals cover ~95% for moderate $n$ when $p$ is not near 0 or 1.
 - MSE and the Gaussian NLL have the same argmin; BCE equals the negative mean Bernoulli log-likelihood; gradient ascent on $\ell$ reproduces `LogisticRegression`.
 - Posterior $\propto$ prior $\times$ likelihood, computable on a grid for any prior; conjugate pairs make it arithmetic on pseudo-counts, and sequential = batch.
 - MAP with a Gaussian prior is ridge with $\lambda = \sigma^2/\tau^2$, verified against `Ridge` for several $\tau$.
@@ -776,8 +1020,7 @@ $f(x) = \lambda e^{-\lambda x}$. Derive the log-likelihood, set its derivative t
 * `mle_tail_prob(x, t)` — the MLE of $P(X > t) = e^{-\lambda t}$, using the invariance property.
 
 Test data: `x = np.array([2.0, 0.5, 1.5, 4.0])` and `t = 3.0`. The second hidden check draws 400 waiting
-times with `rng.exponential(scale=1/2.5, size=400)` right after the setup cell's `rng` is created (so run the
-setup cell first, then only this exercise's cells, in order).
+times with `rng.exponential(scale=1/2.5, size=400)` from a fresh `np.random.default_rng(0)`.
 """,
     starter=r"""
 def exp_loglik(lam, x):
@@ -823,15 +1066,17 @@ try:
 except Exception:
     got = None
 check_hash('MLE rate for the 400 simulated waiting times', got, '{sha_of(ns2["lam_big"], decimals=3)}', decimals=3)
-check('that estimate is within 0.3 of the true rate 2.5', (got is not None) and abs(got - 2.5) < 0.3)
+check('that estimate is within 3 standard errors (3 x 2.5/sqrt(400) = 0.375) of the true rate 2.5', (got is not None) and abs(got - 2.5) < 0.375)
 """,
     explanation_md=r"""
 $\ell(\lambda) = \sum_i [\log\lambda - \lambda x_i] = n\log\lambda - \lambda\sum_i x_i$, so
 $\ell'(\lambda) = n/\lambda - \sum_i x_i = 0$ gives $\hat\lambda = n/\sum x_i = 1/\bar x$; the second
 derivative $-n/\lambda^2 < 0$ confirms a maximum. For the repair times $\bar x = 2$, $\hat\lambda = 0.5$.
 Invariance says the MLE of any function of $\lambda$ is that function of $\hat\lambda$, so
-$\widehat{P}(X > 3) = e^{-1.5} \approx 0.223$ needs no new optimisation. The usual wrong turn is to
-estimate the *mean* $1/\lambda$ and forget to invert, or to use $\bar x$ itself as the rate.
+$\widehat{P}(X > 3) = e^{-1.5} \approx 0.223$ needs no new optimisation. The simulated sample gives
+$\hat\lambda \approx 2.22$, which happens to be 2.25 standard errors low ($\operatorname{SE} = \lambda/\sqrt{n} = 0.125$):
+an estimate is not the truth, even with 400 points. The usual wrong turn is to estimate the *mean* $1/\lambda$
+and forget to invert, or to use $\bar x$ itself as the rate.
 """,
 )
 
@@ -936,9 +1181,9 @@ expectation with $\mathbb{E}[x] = \lambda$ gives $i(\lambda) = 1/\lambda$, so $I
 $\operatorname{SE}(\hat\lambda) = \sqrt{\hat\lambda/n}$ — for the calls, $\sqrt{4/6} = 0.816$ and a Wald
 interval of $[2.40, 5.60]$. The observed information is $-\ell''(\hat\lambda) = \sum x_i/\hat\lambda^2 =
 n\bar x/\bar x^2 = n/\bar x$, identical to $I_n(\hat\lambda)$ because the Poisson's second derivative depends
-on the data only through $\sum x_i$. (Only six counts: the interval is wide, and its lower end is not far
-from zero — a reminder that the Wald interval can go negative for small counts, which the Gamma posterior of
-the guide's Section 7 never does.) A frequent error is to forget the $n$: the information for one count is
+on the data only through $\sum x_i$. (Only six counts, so the interval is wide. For very small counts, such as
+`[0, 0, 1, 0, 0, 0]`, the Wald interval goes negative ($-0.16$), which the Gamma posterior of the guide's
+Section 7 never does.) A frequent error is to forget the $n$: the information for one count is
 $1/\lambda$, for $n$ counts $n/\lambda$.
 """,
 )
@@ -1159,8 +1404,8 @@ $y_i\log p_i + (1 - y_i)\log(1 - p_i)$ — the negative mean of this *is* binary
 functions agree to machine precision. For $K$ classes the likelihood of the label is the softmax probability
 of the true class, and its negative log is the cross-entropy with a one-hot target. The gradient is the
 famous $p - y$: because $\partial\log\text{softmax}(z)_y/\partial z_j = \mathbf{1}[j = y] - p_j$, each row of
-the gradient is $(p_i - \mathbf{e}_{y_i})/n$, which sums to zero (the softmax cannot raise all logits at
-once). Subtracting the row maximum before `exp` prevents overflow and does not change the softmax, since
+the gradient is $(p_i - \mathbf{e}_{y_i})/n$, which sums to zero, because adding the same constant to every
+logit leaves the softmax, and hence the loss, unchanged. Subtracting the row maximum before `exp` prevents overflow and does not change the softmax, since
 the shift cancels in the ratio. The common bug is forgetting the $1/n$ in the gradient after averaging the
 loss, which the finite-difference check catches.
 """,
@@ -1431,8 +1676,8 @@ setting the gradient $-2X^\top(y - Xw) + 2\lambda w$ to zero gives the normal eq
 — identical to what `Ridge` solves, hence agreement to $10^{-8}$. Shrinkage is visible in the smaller norm;
 with $\tau^2 = 10^6$ the prior is flat and the MAP collapses onto the MLE. Stacking the data ten times
 multiplies $X^\top X$ and $X^\top y$ by ten while $\lambda I$ stays put, so the prior's share of the solution
-drops tenfold: the same $\lambda$ regularises less on more data, which is why `alpha` must be re-tuned when
-the dataset grows. (Stacking copies is only a device to scale $n$ without changing the data's direction;
+drops tenfold: the same $\lambda$ regularises less on more data, which is the correct behaviour for a fixed
+prior; only if your loss is a mean must the constant be divided by $n$. (Stacking copies is only a device to scale $n$ without changing the data's direction;
 the point stands for genuinely new data.)
 """,
 )
@@ -1598,7 +1843,7 @@ def bayesian_ab_test(kA, nA, kB, nB, n_draws=200_000, a=1, b=1, rng=None):
                 lift_mean=float(np.mean(pB - pA)))
 
 def prob_B_better_exact(kA, nA, kB, nB, a=1, b=1):
-    # P(pB > pA) = sum over j of P(pB = ... ) -- closed form via a sum over the Beta-Binomial (Cook's formula)
+    # closed form: expand 1 - F_B(pA) as a finite sum (integer alpha_B), then integrate over pA
     aA, bA, aB, bB = a + kA, b + nA - kA, a + kB, b + nB - kB
     j = np.arange(int(aB))
     log_terms = (special.betaln(aA + j, bA + bB) - np.log(bB + j) - special.betaln(1 + j, bB) - special.betaln(aA, bA))
@@ -1619,8 +1864,8 @@ Implement
 * `bayesian_ab_test(kA, nA, kB, nB, n_draws=200_000, a=1, b=1, rng=None)` — with Beta$(a, b)$ priors on both
   conversion rates, draw `n_draws` samples from each posterior (use `rng.beta`; create
   `rng = np.random.default_rng(0)` when `rng is None`) and return a dict with keys `prob_B_better`
-  ($P(p_B > p_A \mid \mathcal{D})$), `expected_loss_B` ($\mathbb{E}[\max(p_A - p_B, 0)]$, what you lose on average by
-  shipping B if it is worse), `expected_loss_A` ($\mathbb{E}[\max(p_B - p_A, 0)]$) and `lift_mean` ($\mathbb{E}[p_B - p_A]$).
+  ($P(p_B > p_A \mid \mathcal{D})$), `expected_loss_B` ($\mathbb{E}[\max(p_A - p_B, 0)]$, the average loss of
+  shipping B, counting zero when B really is better), `expected_loss_A` ($\mathbb{E}[\max(p_B - p_A, 0)]$) and `lift_mean` ($\mathbb{E}[p_B - p_A]$).
 * `prob_B_better_exact(kA, nA, kB, nB, a=1, b=1)` — the *exact* probability, using the closed form for two
   independent Beta posteriors $p_A \sim \text{Beta}(\alpha_A, \beta_A)$, $p_B \sim \text{Beta}(\alpha_B, \beta_B)$ with
   integer $\alpha_B$:
@@ -1678,13 +1923,14 @@ check('symmetric data give P(B > A) = 0.5', (got is not None) and abs(got - 0.5)
     explanation_md=r"""
 Monte Carlo makes the two-dimensional integral $\iint \mathbf{1}[p_B > p_A]\,p(p_A)\,p(p_B)$ trivial: sample
 each posterior, compare, average. With 200,000 draws the standard error of a probability near 0.97 is
-$\sqrt{0.97 \times 0.03/200{,}000} \approx 0.0004$, which is why Monte Carlo and the exact formula agree to
-three decimals. The exact sum (due to John Cook) comes from writing $P(p_B > p_A) = \mathbb{E}_{p_A}[1 -
+$\sqrt{0.97 \times 0.03/200{,}000} \approx 0.0004$, which is why Monte Carlo (0.9694) and the exact formula (0.9698) differ
+by only about one standard error. The exact sum comes from writing $P(p_B > p_A) = \mathbb{E}_{p_A}[1 -
 F_B(p_A)]$ and expanding the Beta CDF with integer first parameter as a finite sum; it is handy for unit tests
 but the Monte Carlo approach generalises to any number of variants and any prior. The expected losses are the
-decision-relevant numbers: here shipping B risks about 0.008 percentage points on average, keeping A forfeits
-about 1.25. A common mistake is to compute $P(p_B > p_A)$ from the *means* alone, or to use the same random
-stream for both posteriors (which induces a spurious correlation).
+decision-relevant numbers: here shipping B risks about 0.008 percentage points on average over all outcomes
+(zero when B really is better), and keeping A forfeits about 1.26. A common mistake is to compute
+$P(p_B > p_A)$ from the *means* alone, or to reseed with the same seed before drawing each posterior, or to reuse
+the same uniform draws for both (which couples them; successive draws from one generator are fine).
 """,
 )
 
@@ -1730,12 +1976,12 @@ for i in range(n_stores):
 ax1.scatter(np.zeros(n_stores), raw, s=visits / 4, label="raw k/n (size = visits)")
 ax1.scatter(np.ones(n_stores), shrunk, s=visits / 4, label="shrunken")
 ax1.axhline(m, color="k", ls=":", label="ensemble mean")
-ax1.set_xticks([0, 1]); ax1.set_xticklabels(["raw", "empirical Bayes"]); ax1.set_ylabel("conversion rate")
-ax1.set_title("Small stores move a lot, big stores barely"); ax1.legend(fontsize=8)
+ax1.set_xticks([0, 1]); ax1.set_xticklabels(["raw", "empirical Bayes"]); ax1.set_xlabel("estimator"); ax1.set_ylabel("conversion rate")
+ax1.set_title("Everyone moves toward the mean; smaller stores keep less of their own rate", fontsize=10); ax1.legend(fontsize=8)
 ax2.scatter(true_rates, raw, s=visits / 4, label=f"raw (MSE {mse_raw:.1e})")
 ax2.scatter(true_rates, shrunk, s=visits / 4, marker="s", label=f"shrunken (MSE {mse_shrunk:.1e})")
 lims = [0, max(raw.max(), true_rates.max()) * 1.05]
-ax2.plot(lims, lims, "k--", lw=1); ax2.set_xlabel("true rate"); ax2.set_ylabel("estimate"); ax2.set_title("Estimates vs truth"); ax2.legend(fontsize=8)
+ax2.plot(lims, lims, "k--", lw=1, label="estimate = truth"); ax2.set_xlabel("true rate"); ax2.set_ylabel("estimate"); ax2.set_title("Estimates vs truth"); ax2.legend(fontsize=8)
 plt.tight_layout(); plt.show()
 
 # --- ranking: which store is really the best? ---
@@ -1777,7 +2023,7 @@ the ensemble* and shrinking each store toward it.
 * the mean squared error of the raw and of the shrunken estimates **against the true rates**, and the MSE of
   the fully pooled estimate (every store $= m$) for comparison;
 * a table or plot showing how far each store moves, with the data weight $n_j/(a + b + n_j)$, demonstrating
-  that small stores move a lot and large stores barely;
+  that small stores keep less of their own rate than large ones;
 * which store is "best" by raw rate, by shrunken rate, and in truth — and a comment on why they can differ;
 * a robustness check: repeat the whole experiment for at least 100 random seeds and report the median ratio of
   shrunken-to-raw MSE and the fraction of replications in which shrinkage helps.
@@ -1790,7 +2036,7 @@ the ensemble* and shrinking each store toward it.
 * MSE is computed against the *true* rates (this is synthetic data; that is the point) for raw, shrunken and
   fully pooled estimates, and the ordering is explained: pooling throws away real differences, raw estimates
   keep all the noise, shrinkage sits between.
-* The ranking comparison identifies that the raw "best" store is typically a small store with a lucky sample.
+* The ranking comparison identifies that the raw "best" store is disproportionately a smaller store with a lucky sample.
 * The robustness loop reports a median MSE ratio and a success fraction over $\ge 100$ seeds, with reproducible
   seeding.
 * Figures have titles and axis labels.
@@ -1809,9 +2055,10 @@ ordinary 5.2% — a lucky sample that even shrinkage cannot fully undo with 173 
 store (#14, true 7.0%) had 1 conversion in 60 visits and looks terrible under both estimates. That is the
 limit of the method: it corrects for *noise* on average, it cannot recover information that a small sample
 never contained. Across 200 replications the median MSE ratio is about 0.55 and shrinkage helps in about 89% of
-them — not a free lunch in every single dataset (when the true rates happen to be widely spread, the fitted
-prior is weak and the gain small), but a large improvement on average, which is what Stein's paradox promises
-for three or more simultaneous estimates.
+them — not a free lunch in every single dataset (in the 11% of replications where it hurts, the moment estimate
+of the between-store variance usually came out too small, the fitted prior too strong — median $a + b$ about 380 against
+about 140 otherwise — and the stores were over-shrunk), but a large improvement on average, the same phenomenon
+that Stein's paradox proves for Gaussian means.
 """,
     solution_code=PROJECT_CODE,
 )

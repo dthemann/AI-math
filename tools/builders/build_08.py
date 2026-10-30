@@ -5,7 +5,7 @@ build_08.py — generates lesson.ipynb, exercises.ipynb and solutions.ipynb for
 
 Run from the repository root:
 
-    python3 _authoring/builders/build_08.py
+    python3 tools/builders/build_08.py
     python3 tools/run_notebooks.py part-3-probability/08-distributions-and-limit-theorems
 
 All hidden answers are computed here by *executing* the reference solutions and hashing
@@ -31,7 +31,7 @@ nb = Notebook("Module 08 — Distributions and Limit Theorems")
 nb.md(r"""
 This notebook is the runnable companion to the concept guide: read [README.md](README.md) first, or keep
 it open alongside. Each section mirrors a numbered section of the guide. We draw a gallery of the named
-distributions, verify every mean and variance formula by simulation, watch the Binomial turn into the
+distributions, check every mean and variance formula against `scipy.stats`, simulate the main families, watch the Binomial turn into the
 Poisson, check memorylessness numerically, test the 68–95–99.7 rule with a Q–Q plot, grow a Beta posterior,
 build the Gamma, Chi-square and Student-t from their ingredients, confirm an MGF identity, watch the law of
 large numbers work (and fail for the Cauchy), see the central limit theorem emerge at different speeds, and
@@ -240,6 +240,38 @@ print(f"P(Y <= 10) sim {np.mean(Y <= 10):.4f}   scipy nbinom.cdf(10, 3, 0.1) = {
 print(f"P(Y = 0) sim {np.mean(Y == 0):.4f}   0.1^3 = {0.1**3:.4f}")
 """)
 
+nb.code(r"""
+# The same simulated runs as pictures: no new random numbers are drawn here
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+
+# left: the remaining wait of the runs that already failed five times, against the original PMF
+wait = np.arange(1, 31)
+rest = X[X > 5] - 5
+ax1.bar(wait, 0.9 ** (wait - 1) * 0.1, color="C0", alpha=0.6, label="P(X = k) = 0.9^(k−1) · 0.1: exact")
+ax1.plot(wait, np.bincount(rest, minlength=31)[1:31] / rest.size, "o", color="C3", ms=4,
+         label="P(X − 5 = k | X > 5): runs that survived 5 trials")
+ax1.axvline(10, color="k", ls="--", lw=1, label="mean 10")
+ax1.axvline(7, color="k", ls=":", lw=1, label="median 7")
+ax1.set_xlabel("k = trial of the first success"); ax1.set_ylabel("probability")
+ax1.set_title("Geometric(0.1) is memoryless: the survivors start over"); ax1.legend(fontsize=8)
+
+# right: a Negative Binomial and a Poisson with the same mean
+fails = np.arange(0, 101)
+ax2.bar(fails, np.bincount(Y, minlength=101)[:101] / Y.size, width=1.0, color="C0", alpha=0.6,
+        label="NegBin(r=3, p=0.1), simulated: mean 27, var 270")
+ax2.plot(fails, stats.poisson.pmf(fails, 27), color="C3", lw=1.5, label="Poisson(27): mean 27, var 27")
+ax2.set_xlabel("k = failures before the 3rd success"); ax2.set_ylabel("probability")
+ax2.set_title("Over-dispersion: variance 10 times the mean"); ax2.legend(fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the red dots, the distribution of the remaining wait among runs that had already failed
+five times, sit on the unconditional bars: the survivors start from scratch. On the right the two
+distributions share the mean 27, but the Poisson is a narrow hump while the Negative Binomial spreads from
+0 to beyond 80. That width is what "variance ten times the mean" looks like.
+""")
+
 nb.md(r"""
 Conditioning on "no success in the first 5 trials" and then asking about 3 *further* failures gives the
 same probability as asking about 3 failures from scratch — the trials have no memory, so a machine that has
@@ -294,6 +326,49 @@ print(f"gaps between calls (minutes): mean {60*gaps.mean():.2f} (20),  P(gap > 3
 kept = arrivals[rng.random(arrivals.size) < 1/3]
 kc = np.bincount(kept.astype(int), minlength=hours)
 print(f"thinned (keep 1/3): mean {kc.mean():.3f}, var {kc.var():.3f}  (Poisson(1))")
+""")
+
+nb.code(r"""
+# One process, three views: the timeline, the gaps between its ticks, and the counts per hour
+fig, axes = plt.subplots(1, 3, figsize=(14, 3.9))
+
+ax = axes[0]
+first, first_kept = arrivals[arrivals < 6], kept[kept < 6]
+ax.eventplot([first, first_kept], lineoffsets=[1, 0], linelengths=0.6, colors=["C0", "C2"])
+for h in range(7):
+    ax.axvline(h, color="0.8", lw=0.8, zorder=0)
+for h in range(6):
+    ax.text(h + 0.5, 1.4, str(np.sum(first.astype(int) == h)), color="C0", ha="center", fontsize=10)
+    ax.text(h + 0.5, 0.4, str(np.sum(first_kept.astype(int) == h)), color="C2", ha="center", fontsize=10)
+ax.set_xlim(0, 6); ax.set_ylim(-0.5, 1.75)
+ax.set_yticks([0, 1]); ax.set_yticklabels(["thinned\n(keep 1/3)", "all calls"])
+ax.set_xlabel("time (hours)"); ax.set_ylabel("stream")
+ax.set_title("Six hours: a tick per call, counts per hour")
+
+ax = axes[1]
+tgrid = np.linspace(0, 120, 300)
+ax.hist(60 * gaps, bins=60, range=(0, 120), density=True, alpha=0.6, label="gaps between calls")
+ax.plot(tgrid, (3 / 60) * np.exp(-(3 / 60) * tgrid), "r", label="Exponential, rate 3/60 per minute")
+ax.axvline(20, color="k", ls="--", lw=1, label="mean gap 20 min")
+ax.set_xlabel("gap (minutes)"); ax.set_ylabel("density")
+ax.set_title("Exponential gaps ..."); ax.legend(fontsize=8)
+
+ax = axes[2]
+show = ks[:9]
+ax.bar(show - 0.2, [(counts == k).mean() for k in show], width=0.4, color="C0", alpha=0.7, label="calls per hour, simulated")
+ax.plot(show - 0.2, pmf_p[:9], "ko", ms=4, label="Poisson(3) PMF")
+ax.bar(show + 0.2, [(kc == k).mean() for k in show], width=0.4, color="C2", alpha=0.7, label="thinned stream, simulated")
+ax.plot(show + 0.2, stats.poisson.pmf(show, 1), "k^", ms=4, label="Poisson(1) PMF")
+ax.set_xlabel("k = calls in an hour"); ax.set_ylabel("probability")
+ax.set_title("... produce Poisson counts"); ax.legend(fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the numbers printed above the timeline are just the ticks between neighbouring grid lines.
+The gaps between those ticks follow the Exponential in the middle panel, and the counts over all 20,000 hours
+follow the Poisson(3) PMF on the right: three views of one process. Thinning keeps each tick with probability
+1/3, and its counts land on the Poisson(1) markers, still with mean equal to variance.
 """)
 
 nb.md(r"""
@@ -380,16 +455,57 @@ print(f"\nlog-normal income: median {np.median(L):,.0f} (50,000), mean {L.mean()
 """)
 
 nb.code(r"""
+# The numbers above as pictures: the exact density of X, and the same samples S and L
+fig, axes = plt.subplots(1, 3, figsize=(14, 3.9))
+
+ax = axes[0]
+xs = np.linspace(140, 192, 400)
+pdf = stats.norm.pdf(xs, mu, sd)
+for k, alpha, share in [(3, 0.12, "99.7%"), (2, 0.2, "95.4%"), (1, 0.3, "68.3%")]:
+    inside = np.abs(xs - mu) <= k * sd
+    ax.fill_between(xs[inside], pdf[inside], color="C0", alpha=alpha, label=f"±{k}σ: {share}")
+ax.fill_between(xs[xs >= 180], pdf[xs >= 180], color="C3", alpha=0.8, label="X > 180 cm: 1.6%")
+ax.plot(xs, pdf, "k", lw=1.2)
+ax.set_xlabel("height (cm)"); ax.set_ylabel("density")
+ax.set_title("N(165, 7²): the 68–95–99.7 rule"); ax.legend(fontsize=8)
+
+ax = axes[1]
+xs = np.linspace(290, 370, 300)
+ax.hist(S, bins=80, density=True, alpha=0.6, label="X + Y, two independent N(165, 7²)")
+ax.plot(xs, stats.norm.pdf(xs, 330, sqrt(98)), "r", label="N(330, 98) pdf: exact")
+ax.set_ylim(0, 0.055); ax.set_xlabel("combined height of two people (cm)"); ax.set_ylabel("density")
+ax.set_title("A sum of Normals is exactly Normal"); ax.legend(fontsize=8, loc="upper center")
+
+ax = axes[2]
+ax.hist(L / 1000, bins=100, range=(0, 200), density=True, alpha=0.6, label="log-normal incomes")
+ax.axvline(50_000 * exp(-0.25) / 1000, color="k", ls=":", label=f"mode {50 * exp(-0.25):.1f}k")
+ax.axvline(50, color="k", ls="--", label="median 50k")
+ax.axvline(50 * exp(0.125), color="k", ls="-", lw=1, label=f"mean {50 * exp(0.125):.1f}k")
+ax.set_xlabel("income (thousands)"); ax.set_ylabel("density")
+ax.set_title("Log-normal: mode < median < mean"); ax.legend(fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the three shaded bands nest: one, two and three standard deviations capture 68%, 95% and
+99.7% of the heights, and the red sliver beyond 180 cm is the 1.6% obtained above by standardising. The
+histogram of $X + Y$ lies on the $\mathcal{N}(330, 98)$ curve with no approximation involved. The income
+panel shows the signature of right skew, mode 38.9k below median 50k below mean 56.7k, so $e^{\mu}$ is the
+median, not the mean.
+""")
+
+nb.code(r"""
 def qq_plot(ax, sample, title):
     s = np.sort(sample)
     n = len(s)
     probs = (np.arange(1, n + 1) - 0.5) / n
     theo = stats.norm.ppf(probs)
     zs = (s - s.mean()) / s.std()
-    ax.plot(theo, zs, ".", ms=2)
-    ax.plot([-4, 4], [-4, 4], "r--", lw=1)
-    ax.set_xlim(-4, 4); ax.set_ylim(-5, 6)
+    ax.plot(theo, zs, ".", ms=2, label="sample, standardised")
+    ax.plot([-4, 4], [-4, 4], "r--", lw=1, label="Normal reference y = x")
+    ax.set_xlim(-4, 4); ax.set_ylim(-5, 8)
     ax.set_xlabel("theoretical Normal quantile"); ax.set_ylabel("standardised sample quantile"); ax.set_title(title)
+    ax.legend(fontsize=8, loc="upper left")
 
 fig, axes = plt.subplots(1, 3, figsize=(12, 3.8))
 qq_plot(axes[0], rng.normal(size=5000), "Normal data: on the line")
@@ -400,9 +516,9 @@ plt.tight_layout(); plt.show()
 
 nb.md(r"""
 In the Q–Q plot a right-skewed sample bends upward on the right (its large quantiles are larger than a
-Normal's) and a heavy-tailed sample peels away at *both* ends. This is the single most useful diagnostic
-before you trust a Gaussian assumption — on residuals of a regression, on the per-example losses of a
-model, or on the sampling distribution of a metric.
+Normal's) and a heavy-tailed sample peels away at *both* ends (its most extreme points lie off the chart).
+This is the single most useful diagnostic before you trust a Gaussian assumption — on residuals of a
+regression, on the per-example losses of a model, or on the sampling distribution of a metric.
 
 **Try it yourself:** feed `np.log(L)` (the log of the log-normal incomes) into `qq_plot` — the log
 transform turns the skewed sample into a straight line.
@@ -484,8 +600,10 @@ print(f"P(θ_B > θ_A) = {np.mean(b_s > a_s):.3f}")
 nb.md(r"""
 The Gamma histogram built from three Exponentials sits exactly on `gamma.pdf`, and its tail probability
 $P(G > 20)$ equals the Poisson probability of at most 2 arrivals in 20 minutes — the same event described
-twice. On the log scale the Student-t(3) tails are visibly straight lines (power law) while the Normal's
-curve down (Gaussian): beyond 3 standard units the $t_3$ has 21 times the mass. The Beta posterior
+twice. On the log scale the Student-t(3) density is still $2 \times 10^{-3}$ at $\pm 6$, where the Normal
+($6 \times 10^{-9}$) has long left the chart: a power-law tail decays polynomially, not like $e^{-x^2/2}$. (On
+log–log axes, as in the survival plot of Section 8, it would be a straight line.) Beyond $|x| = 3$ the
+$t_3$ has 21 times the mass of the Normal. The Beta posterior
 has simply added the counts to the prior parameters; the result is a full distribution for the conversion
 rate, from which "probability the rate exceeds 20%" or "probability B beats A" are one line each.
 """)
@@ -568,25 +686,29 @@ nb.md(r"""
 
 $P(|\bar X_n - \mu| \ge \varepsilon) \le \sigma^2/(n\varepsilon^2)$. We plot the running average of
 Exponential(1) samples for several seeds together with the Chebyshev band and the (much tighter) CLT band,
-then do the same for a Cauchy sample, whose mean does not exist — the running average never settles.
+then do the same for a Student-t(2) sample, whose variance is infinite, and for a Cauchy sample, whose mean
+does not exist — that running average never settles.
 """)
 
 nb.code(r"""
 n = 20_000
 ns = np.arange(1, n + 1)
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+fig, (ax1, ax3, ax2) = plt.subplots(1, 3, figsize=(15, 4))
 for seed in range(6):
     r = np.random.default_rng(seed)
     ax1.plot(ns, np.cumsum(r.exponential(1.0, n)) / ns, lw=0.8, alpha=0.8)
     ax2.plot(ns, np.cumsum(r.standard_cauchy(n)) / ns, lw=0.8, alpha=0.8)
+    ax3.plot(ns, np.cumsum(r.standard_t(2, n)) / ns, lw=0.8, alpha=0.8)
 ax1.axhline(1, color="k", ls="--", lw=1)
 ax1.fill_between(ns, 1 - 1.96 / np.sqrt(ns), 1 + 1.96 / np.sqrt(ns), color="C0", alpha=0.15, label="CLT 95% band ±1.96σ/√n")
 ax1.plot(ns, 1 + np.sqrt(1 / (ns * 0.05)), "r:", lw=1, label="Chebyshev 95% band ±σ/√(0.05 n)")
 ax1.plot(ns, 1 - np.sqrt(1 / (ns * 0.05)), "r:", lw=1)
 ax1.set_xscale("log"); ax1.set_ylim(0, 2); ax1.set_xlabel("n (log scale)"); ax1.set_ylabel("running average")
 ax1.set_title("Exponential(1): six running averages → 1"); ax1.legend(fontsize=8, loc="upper right")
-ax2.set_xscale("log"); ax2.set_ylim(-6, 6); ax2.axhline(0, color="k", ls="--", lw=1)
-ax2.set_xlabel("n (log scale)"); ax2.set_ylabel("running average"); ax2.set_title("Cauchy: the average never settles")
+ax3.set_xscale("log"); ax3.set_ylim(-2, 2); ax3.axhline(0, color="k", ls="--", lw=1, label="true mean 0")
+ax3.set_xlabel("n (log scale)"); ax3.set_ylabel("running average"); ax3.set_title("Student-t(2): converges, but in jumps"); ax3.legend(fontsize=8, loc="upper right")
+ax2.set_xscale("log"); ax2.set_ylim(-6, 6); ax2.axhline(0, color="k", ls="--", lw=1, label="centre 0 (no mean exists)")
+ax2.set_xlabel("n (log scale)"); ax2.set_ylabel("running average"); ax2.set_title("Cauchy: the average never settles"); ax2.legend(fontsize=8, loc="upper right")
 plt.tight_layout(); plt.show()
 
 # the gambler's fallacy in numbers: the proportion converges while the count drifts
@@ -597,14 +719,40 @@ for m in (100, 1_000, 10_000):
     print(f"after {m:>6d} flips: sd of (heads - n/2) = {excess.std():6.2f} (√n/2 = {sqrt(m)/2:6.2f});   sd of proportion = {(excess / m).std():.4f} (1/(2√n) = {1/(2*sqrt(m)):.4f})")
 """)
 
+nb.code(r"""
+# The same 30 coin sequences read twice: as an excess count, and as a proportion
+flip_n = np.arange(1, 10_001)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+for i in range(30):
+    ax1.plot(flip_n, heads[i] - flip_n / 2, lw=0.5, alpha=0.6)
+    ax2.plot(flip_n, heads[i] / flip_n - 0.5, lw=0.5, alpha=0.6)
+ax1.plot(flip_n, np.sqrt(flip_n), "k--", lw=1.2, label="±2 · √n/2 (95% envelope)")
+ax1.plot(flip_n, -np.sqrt(flip_n), "k--", lw=1.2)
+ax1.set_xlabel("n flips"); ax1.set_ylabel("heads − n/2")
+ax1.set_title("The excess count drifts like √n/2: luck is never repaid"); ax1.legend(fontsize=8, loc="upper left")
+ax2.plot(flip_n, 1 / np.sqrt(flip_n), "k--", lw=1.2, label="±2 · 1/(2√n) (95% envelope)")
+ax2.plot(flip_n, -1 / np.sqrt(flip_n), "k--", lw=1.2)
+ax2.set_xscale("log"); ax2.set_xlim(10, 10_000); ax2.set_ylim(-0.3, 0.3)
+ax2.set_xlabel("n flips (log scale)"); ax2.set_ylabel("heads/n − 1/2")
+ax2.set_title("The proportion converges like 1/(2√n): luck is diluted"); ax2.legend(fontsize=8, loc="upper right")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the same 30 coin sequences fan out on the left, where the excess count keeps growing like
+$\sqrt{n}/2$ with nothing pulling it back to zero, and funnel in on the right, because dividing by $n$ shrinks
+that same excess like $1/(2\sqrt{n})$. The law of large numbers is the right panel, not the left.
+""")
+
 nb.md(r"""
 Every Exponential trajectory ends inside the CLT band; the Chebyshev band is far wider — it is a guarantee
 valid for *any* distribution, paid for with looseness. The Cauchy panel is the warning: each trajectory
 is occasionally hit by a sample so large that the average jumps, and no amount of data cures it, because
-the mean does not exist. In the coin table the *count* of excess heads grows like $\sqrt{n}/2$ while the
-*proportion* shrinks like $1/(2\sqrt{n})$: early luck is diluted, never repaid. (A Student-t with 2
-degrees of freedom — finite mean, infinite variance — sits between the two panels: its average converges,
-but far more slowly and erratically than the Exponential's.)
+the mean does not exist. The Student-t with 2 degrees of freedom in the middle panel (finite mean, infinite
+variance) sits between the two: its average converges, but more erratically than the Exponential's and
+somewhat more slowly (its error shrinks like $\sqrt{\ln n / n}$, roughly 3 to 4 times the Exponential's spread at
+$n = 20{,}000$). In the coin table the *count* of excess heads grows like $\sqrt{n}/2$ while the
+*proportion* shrinks like $1/(2\sqrt{n})$: early luck is diluted, never repaid.
 """)
 
 # ---------------------------------------------------------------- 10. CLT
@@ -635,7 +783,7 @@ sources = {
 }
 ns = (1, 2, 5, 30)
 reps = 20_000
-zgrid = np.linspace(-4, 4, 200)
+zgrid = np.linspace(-4, 5, 200)
 fig, axes = plt.subplots(3, 4, figsize=(13, 8))
 kd = {}
 for i, (name, (sampler, mu, sigma)) in enumerate(sources.items()):
@@ -643,13 +791,23 @@ for i, (name, (sampler, mu, sigma)) in enumerate(sources.items()):
         z = standardised_means(sampler, n, reps, mu, sigma)
         kd[(name, n)] = kolmogorov_distance(z)
         ax = axes[i, j]
-        ax.hist(z, bins=np.linspace(-4, 4, 81), density=True, alpha=0.6)
-        ax.plot(zgrid, stats.norm.pdf(zgrid), "r", lw=1.2)
+        if name.startswith("Bernoulli"):
+            # a lattice distribution: one bar per number of successes, its area the exact probability
+            spacing = 1 / (sigma * sqrt(n))
+            atoms = np.sqrt(n) * (np.arange(n + 1) / n - mu) / sigma
+            ax.bar(atoms, stats.binom.pmf(np.arange(n + 1), n, p_rare) / spacing, width=spacing,
+                   alpha=0.6, edgecolor="white", linewidth=0.5)
+            ax.set_xlim(-4, 5)
+        else:
+            ax.hist(z, bins=np.linspace(-4, 4, 81), density=True, alpha=0.6, label="standardised means")
+            ax.set_xlim(-4, 4)
+        ax.plot(zgrid, stats.norm.pdf(zgrid), "r", lw=1.2, label="N(0, 1)")
         ax.set_title(f"{name}, n = {n}\nKolmogorov distance {kd[(name, n)]:.3f}", fontsize=9)
-        ax.set_xlim(-4, 4); ax.set_ylim(0, 0.9)
+        ax.set_ylim(0, 0.9)
         if j == 0: ax.set_ylabel("density")
         if i == 2: ax.set_xlabel("standardised mean z")
-fig.suptitle("Histograms of √n(X̄ - μ)/σ against the standard Normal (red)")
+axes[0, 0].legend(fontsize=7)
+fig.suptitle("Histograms of √n(X̄ - μ)/σ against the standard Normal (Bernoulli row: one bar per number of successes)")
 plt.tight_layout(); plt.show()
 """)
 
@@ -666,13 +824,15 @@ for n in ns_long:
     rows.append(d)
     print(f"{n:5d} {d[0]:9.4f} {d[1]:12.4f} {0.4748*rho_exp/sqrt(n):15.4f} {d[2]:16.4f} {0.4748*rho_bern/sig3_bern/sqrt(n):16.4f}")
 rows = np.array(rows)
+plt.figure(figsize=(11, 4.5))
 plt.loglog(ns_long, rows[:, 1], "o-", label="Exponential: observed distance")
 plt.loglog(ns_long, rows[:, 2], "s-", label="Bernoulli(0.05): observed distance")
 plt.loglog(ns_long, rows[:, 0], "^-", label="Uniform: observed distance")
 plt.loglog(ns_long, 0.4748 * rho_exp / np.sqrt(ns_long), "k--", lw=1, label="Berry–Esseen bound, Exponential")
 plt.loglog(ns_long, 0.3 / np.sqrt(ns_long), "k:", lw=1, label="reference slope 1/√n")
-plt.xlabel("n"); plt.ylabel("sup |F_n - Φ|"); plt.title("Distance to the Normal shrinks like 1/√n — with a skewness-dependent constant")
-plt.legend(fontsize=8); plt.show()
+plt.axhline(0.8687 / np.sqrt(reps), color="grey", ls="--", lw=1, label="simulation noise ≈ 0.87/√20,000 (the average score of a perfect Normal)")
+plt.xlabel("n"); plt.ylabel("sup |F_n - Φ|"); plt.title("Distance to the Normal shrinks like 1/√n, down to the simulation noise")
+plt.legend(fontsize=8, bbox_to_anchor=(1.01, 1), loc="upper left"); plt.tight_layout(); plt.show()
 
 skew = lambda p: (1 - 2 * p) / sqrt(p * (1 - p))
 print(f"\nskewness of the source: Uniform 0, Exponential 2, Bernoulli(0.05) {skew(0.05):.2f};  of the mean of 30: {2/sqrt(30):.2f} and {skew(0.05)/sqrt(30):.2f}")
@@ -681,12 +841,19 @@ print(f"n needed for the skewness of the mean to fall below 0.3: Exponential {(2
 
 nb.md(r"""
 The Uniform is bell-shaped by $n = 2$ (the triangular distribution) and nearly indistinguishable from the
-Normal at $n = 5$; from $n = 10$ on its Kolmogorov distance sits at the Monte Carlo noise floor of about
-$0.005$ that 20,000 repetitions allow. The Exponential needs $n = 30$ to look symmetric. The Bernoulli(0.05) mean of 30 is still a
-comb of spikes (0, 1, 2, 3 successes) and only at $n = 1000$ does it approach the bell. On the log–log
-plot every observed curve has slope $-1/2$, and the Berry–Esseen bound sits above the Exponential's
-curve with the same slope: the *rate* is universal, the *constant* is set by skewness. This is why "$n = 30$
-is enough" is a rule of thumb for roughly symmetric data and a trap for rare events.
+Normal at $n = 5$; from $n = 10$ on its Kolmogorov distance is pure simulation noise: a perfect Normal
+sample of 20,000 scores $0.87/\sqrt{20{,}000} \approx 0.006$ on average, give or take about $0.002$, and the
+table's $0.004$–$0.005$ lies within that. The Exponential needs $n = 30$ to look
+symmetric. The Bernoulli(0.05) mean of 30 is still a coarse skewed staircase, one bar per number of successes
+0, 1, 2, … (the four tallest, for 0–3 successes, carry 94% of the mass), and only at $n = 1000$ does it
+approach the bell. (That row plots the exact probabilities, one bar per number of successes, because a
+fixed-width histogram cannot show a lattice honestly.) On the log–log plot the Bernoulli curve has slope $-1/2$
+from $n = 10$ on and the Exponential curve has it up to about $n = 30$; beyond that simulation noise adds to its
+small remaining distance and the curve flattens towards that noise level, around which the Uniform curve already scatters. The
+Berry–Esseen bound for the Exponential sits above the Exponential curve with exactly the slope $-1/2$ (that it
+runs along the Bernoulli curve is a coincidence; the Bernoulli's own bound, in the table, is larger). The *rate*
+is universal, the *constant* is set by skewness. This is why "$n = 30$ is enough" is a rule of thumb for roughly
+symmetric data and a trap for rare events.
 
 **Try it yourself:** set `p_rare = 0.01` and re-run both cells — then read the number of samples a
 "significant" A/B test on a 1%-conversion page really needs.
@@ -700,8 +867,10 @@ margin of error $1.96\sqrt{p(1-p)/n}$ is trustworthy.
 
 nb.code(r"""
 # Cauchy: the distribution of the mean of n samples does not depend on n
+means = {}
 for n in (1, 10, 100, 1000):
     m = rng.standard_cauchy((20_000, n)).mean(axis=1)
+    means[n] = m
     q = np.quantile(m, [0.25, 0.5, 0.75])
     print(f"n = {n:>5d}: quartiles of the sample mean {q[0]:7.3f} {q[1]:7.3f} {q[2]:7.3f}   (Cauchy quartiles: -1, 0, 1)")
 
@@ -712,6 +881,33 @@ moe = 1.96 * sqrt(p_true * (1 - p_true) / n_poll)
 print(f"\npoll of {n_poll}: sd of the proportion {props.std():.4f} (√(p(1-p)/n) = {sqrt(p_true*(1-p_true)/n_poll):.4f}),  margin of error ±{100*moe:.1f} points")
 print(f"coverage of p ± margin: {np.mean(np.abs(props - p_true) <= moe):.4f} (CLT promises 0.95)")
 print(f"sample size for a ±2-point margin: n = (1.96 · 0.5 / 0.02)² = {(1.96*0.5/0.02)**2:.0f}")
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+# 8% of a Cauchy lies outside ±8, so each bar is scaled by ALL 20,000 values, not just those shown
+edges = np.linspace(-8, 8, 81)
+for n, m in means.items():
+    ax1.hist(m, bins=edges, weights=np.full(m.size, 1 / (m.size * (edges[1] - edges[0]))),
+             histtype="step", lw=1.3, label=f"mean of n = {n}")
+xs = np.linspace(-8, 8, 400)
+ax1.plot(xs, 1 / (pi * (1 + xs**2)), "k--", lw=1, label="Cauchy pdf 1/(π(1+x²))")
+ax1.set_xlabel("sample mean"); ax1.set_ylabel("density")
+ax1.set_title("Cauchy: the mean has the same distribution for every n"); ax1.legend(fontsize=8)
+
+# proportions live on a 0.001 lattice: bin edges fall between lattice points, or the histogram shows a false comb
+ax2.hist(props, bins=np.arange(0.4605, 0.5805, 0.003), density=True, alpha=0.6, label="sample proportion, 50,000 polls of 1,000")
+xs = np.linspace(0.46, 0.58, 300)
+ax2.plot(xs, stats.norm.pdf(xs, p_true, sqrt(p_true * (1 - p_true) / n_poll)), "r", label="N(0.52, 0.0158²)")
+ax2.axvline(p_true - moe, color="k", ls=":", lw=1.2, label="p ± 3.1 points (95%)")
+ax2.axvline(p_true + moe, color="k", ls=":", lw=1.2)
+ax2.set_ylim(0, 34); ax2.set_xlabel("proportion for A"); ax2.set_ylabel("density")
+ax2.set_title("Poll of 1,000: the proportion is Normal"); ax2.legend(fontsize=8, loc="upper right")
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** the four Cauchy histograms are one curve: averaging 1,000 samples has narrowed nothing, which
+is what "the mean does not exist" looks like. The poll's proportions form the bell
+$\mathcal{N}(0.52, 0.0158^2)$, whose central 95% is the $\pm 3.1$-point margin of error drawn on it.
 """)
 
 nb.md(r"""
@@ -746,7 +942,7 @@ def mc_estimate(n, rng, antithetic=False):
 est, se = mc_estimate(10_000, rng)
 print(f"n = 10,000:  estimate {est:.5f} ± {se:.5f} (standard error),  exact {I_exact:.5f},  error {est - I_exact:+.5f}")
 est_a, se_a = mc_estimate(10_000, rng, antithetic=True)
-print(f"antithetic:  estimate {est_a:.5f} ± {se_a:.5f},  error {est_a - I_exact:+.5f}   -> variance ratio ≈ {(se / se_a)**2:.0f}x")
+print(f"antithetic:  estimate {est_a:.5f} ± {se_a:.5f},  error {est_a - I_exact:+.5f}   -> variance ratio ≈ {(se / se_a)**2:.2g}x")
 
 ns = np.array([100, 300, 1_000, 3_000, 10_000, 30_000, 100_000])
 reps = 200
@@ -775,6 +971,27 @@ for n, r, ra, rep in zip(ns, rmse, rmse_a, reported):
     print(f"n = {n:>7d}: RMSE plain {r:.5f}   reported SE {rep:.5f}   RMSE antithetic {ra:.5f}")
 """)
 
+nb.code(r"""
+# Why antithetic pairs work on one integrand and not on another (a local generator: the rng stream is untouched)
+u_pairs = np.random.default_rng(8).random(2000)
+h = lambda u: np.sin(np.pi * u)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
+ax1.plot(g(u_pairs), g(1 - u_pairs), ".", ms=3, alpha=0.5, label="2,000 pairs (U, 1 − U)")
+ax1.set_xlabel("g(U) = exp(−U²)"); ax1.set_ylabel("g(1 − U)")
+ax1.set_title(f"Monotone integrand: corr = {np.corrcoef(g(u_pairs), g(1 - u_pairs))[0, 1]:.2f}, pairs cancel noise"); ax1.legend(fontsize=8)
+ax2.plot(h(u_pairs), h(1 - u_pairs), ".", ms=3, alpha=0.5, label="2,000 pairs (U, 1 − U)")
+ax2.set_xlabel("h(U) = sin(πU)"); ax2.set_ylabel("h(1 − U)")
+ax2.set_title(f"Symmetric integrand: corr = {np.corrcoef(h(u_pairs), h(1 - u_pairs))[0, 1]:+.2f}, pairs are copies"); ax2.legend(fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+nb.md(r"""
+**Notice that** for the monotone integrand the pairs lie on a falling curve: when $g(U)$ is large, $g(1-U)$ is
+small, so the pair average has far less spread than either member. A correlation $\rho = -0.96$ gives the
+variance ratio $1/(1+\rho) = 25$ measured above. The symmetric $\sin(\pi U)$ sends $U$ and $1-U$ to the same
+value, so the pair average is just $h(U)$ and the second evaluation adds no information.
+""")
+
 nb.md(r"""
 The reported standard error $\hat\sigma/\sqrt{n}$ tracks the actual root-mean-square error at every $n$ —
 that is the CLT delivering a trustworthy error bar for an integral whose value we pretended not to know.
@@ -783,8 +1000,10 @@ whole curve down by a factor of about 5 in error (25 in variance) at zero extra 
 $e^{-u^2}$ is monotone and $g(U)$, $g(1-U)$ are strongly negatively correlated. Module 18 adds
 importance sampling and MCMC for distributions you cannot sample directly.
 
-**Try it yourself:** replace `g` by `lambda u: np.sin(np.pi * u)` (symmetric about 1/2): the antithetic
-pair $g(U) + g(1-U)$ is now *perfectly* correlated, the pair average is just $g(U)$, and the trick buys nothing.
+**Try it yourself:** replace `g` by `lambda u: np.sin(np.pi * u)` (symmetric about 1/2) and `I_exact` by
+`2 / np.pi`: the antithetic pair $g(U) + g(1-U)$ is now *perfectly* correlated and the pair average is just $g(U)$.
+The trick does worse than nothing: $n$ evaluations now give only $n/2$ independent values, so the variance doubles
+(the printed ratio falls to about 0.5, and the antithetic RMSE curve rises above the plain one).
 """)
 
 nb.md(r"""
@@ -882,7 +1101,11 @@ lam_1pct = None
 check_close('P(exactly 3 of 20 buy) = C(20,3) 0.1^3 0.9^17', p_exactly_3, comb(20, 3) * 0.1**3 * 0.9**17)
 check_hash('P(at most 3 buy)', p_at_most_3, '{sha_of(ns1["p_at_most_3"], decimals=4)}', decimals=4)
 check_hash('P(at least 5 buy)', p_at_least_5, '{sha_of(ns1["p_at_least_5"], decimals=4)}', decimals=4)
-check_hash('95% quantile of the purchase count', k_95, '{sha_of(ns1["k_95"])}')
+try:
+    k_int = int(k_95) if float(k_95) == int(k_95) else None     # a whole-number float, which is what scipy's ppf returns, is just as right as an int
+except Exception:
+    k_int = None
+check_hash('95% quantile of the purchase count', k_int, '{sha_of(ns1["k_95"])}')
 check_close('P(no call in an hour) = e^-3', p_pois_0, exp(-3))
 check_hash('P(6 or more calls)', p_pois_ge_6, '{sha_of(ns1["p_pois_ge_6"], decimals=4)}', decimals=4)
 check_hash('rate for a 1% chance of a call-free hour', lam_1pct, '{sha_of(ns1["lam_1pct"], decimals=3)}', decimals=3)
@@ -1692,15 +1915,21 @@ check('antithetic estimate within 4 SE of the truth', est_a is not None and se_a
 check('antithetic SE at least 3x smaller than plain SE', se is not None and se_a is not None and se_a > 0 and se / se_a > 3)
 check_hash('seeded antithetic estimate', est_a, '{sha_of(ns10["est_a"], decimals=4)}', decimals=4)
 try:
-    got = samples_needed(0.201, 0.0002)
+    # equally correct formulas can differ by 1 in floating point here: compare to the nearest thousand
+    got = round(int(samples_needed(0.201, 0.0002)), -3)
 except Exception:
     got = None
-check_hash('samples needed for SE 0.0002 with sigma 0.201', got, '{sha_of(ns10["nn"])}')
+check_hash('samples needed for SE 0.0002 with sigma 0.201 (to the nearest thousand)', got, '{sha_of(round(ns10["nn"], -3))}')
 try:
     got = samples_needed(1.0, 0.1)
 except Exception:
     got = None
 check_close('samples_needed(1, 0.1) = 100', got, 100)
+try:
+    got = samples_needed(1.0, 0.3)
+except Exception:
+    got = None
+check_close('samples_needed(1, 0.3) = 12 (11.1 rounds up, not down)', got, 12)
 """,
     explanation_md=r"""
 Writing $\int_a^b f = (b-a)\,\mathbb{E}[f(U)]$ with $U \sim \text{Uniform}(a, b)$ turns integration into averaging,
@@ -1825,8 +2054,10 @@ agents are needed so that at least 90% of calls are answered within 20 seconds?*
 * The queue is simulated correctly: the earliest-free agent serves the next call, waits are `start - arrival`, and
   a call that finds a free agent has wait 0.
 * The table reports occupancy, $P(\text{wait} > 0)$, the service level and waiting-time quantiles for each staffing
-  level, and the smallest $c$ meeting the 90%-within-20-seconds target is identified (12 agents).
-* The simulated service levels agree with the Erlang C formula to within about 0.01 for every $c$.
+  level, and the smallest $c$ meeting the 90%-within-20-seconds target is identified (12 agents in simulation, service
+  level about 0.905; Erlang C gives 0.8998, a hair under the target, so 13 with that reasoning is also correct).
+* The simulated service levels agree with the Erlang C formula to within about 0.02 for every $c$ (a few standard
+  errors of the 60-day estimate).
 * The histogram has a title, axis labels and a legend, and shows how one agent more or fewer changes the
   waiting-time distribution.
 * The standard error is computed from independent simulated days, and the answer explains that pooled calls are
@@ -1837,7 +2068,8 @@ agents are needed so that at least 90% of calls are answered within 20 seconds?*
 The offered load is $\lambda \times \mathbb{E}[\text{service}] = 2 \times 4 = 8$ agent-equivalents, so at least 9 agents
 are needed for the queue to be stable at all, and at 9 agents (89% occupancy) only about 40% of calls are answered
 within 20 seconds. Each additional agent helps enormously at first and then less: 10 agents give about 65%,
-11 about 81%, **12 agents about 90%** (occupancy 67%), 13 about 95%. The simulation matches the Erlang C
+11 about 81%, **12 agents about 90%** (occupancy 67%; Erlang C gives 0.8998, so 12 sits right at the target and clears it only
+within simulation noise), 13 about 95%. The simulation matches the Erlang C
 formula to within simulation noise, which confirms both the queue logic and the memorylessness of the inputs
 (Erlang C assumes exactly this $M/M/c$ model). The waiting-time histograms show that most calls at 12 agents do
 not wait at all and the conditional wait of those that do is roughly Exponential with mean $1/(c\mu - \lambda)$
